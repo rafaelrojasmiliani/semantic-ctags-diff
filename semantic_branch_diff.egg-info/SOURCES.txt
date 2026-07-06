@@ -5,6 +5,7 @@ semantic_branch_diff/cli.py
 semantic_branch_diff/ctags_adapter.py
 semantic_branch_diff/diff_engine.py
 semantic_branch_diff/git_utils.py
+semantic_branch_diff/navigation.py
 semantic_branch_diff/pydriller_adapter.py
 semantic_branch_diff/renderers.py
 semantic_branch_diff/symbols.py
@@ -17,4 +18,5 @@ semantic_branch_diff.egg-info/top_level.txt
 tests/test_ctags_parsing.py
 tests/test_diff_engine.py
 tests/test_examples.py
+tests/test_navigation.py
 tests/test_symbol_normalization.py

@@ -69,10 +69,12 @@ class ModifiedSymbolResult:
 
     def to_dict(self) -> dict[str, Any]:
         """Serialize to a JSON-friendly dict, omitting empty ``pydriller``."""
+        from semantic_branch_diff.navigation import enrich_symbol_dict
+
         data = asdict(self)
         if not data["pydriller"]:
             del data["pydriller"]
-        return data
+        return enrich_symbol_dict(data)
 
 
 @dataclass
@@ -99,7 +101,9 @@ class SymbolSummary:
 
     def to_dict(self) -> dict[str, Any]:
         """Serialize to a JSON-friendly dict."""
-        return asdict(self)
+        from semantic_branch_diff.navigation import enrich_symbol_dict
+
+        return enrich_symbol_dict(asdict(self))
 
 
 @dataclass
@@ -192,6 +196,8 @@ class SemanticDiffResult:
 
     def to_dict(self) -> dict[str, Any]:
         """Serialize the full result tree for JSON output."""
+        from semantic_branch_diff.navigation import collect_navigation_choices
+
         return {
             "repo": self.repo,
             "base_ref": self.base_ref,
@@ -200,6 +206,7 @@ class SemanticDiffResult:
             "head_commit": self.head_commit,
             "files": [f.to_dict() for f in self.files],
             "summary": self.summary,
+            "navigation": collect_navigation_choices(self),
         }
 
 

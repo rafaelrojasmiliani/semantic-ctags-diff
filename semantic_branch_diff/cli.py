@@ -14,11 +14,13 @@ Comparison modes:
 from __future__ import annotations
 
 import argparse
+import json
 import logging
 import sys
 from pathlib import Path
 
 from semantic_branch_diff.diff_engine import DEFAULT_EXTENSIONS, semantic_diff
+from semantic_branch_diff.navigation import symbol_at_path
 from semantic_branch_diff.renderers import render_json, render_markdown
 
 logger = logging.getLogger(__name__)
@@ -95,11 +97,28 @@ def build_parser() -> argparse.ArgumentParser:
         help="Attach structural excerpts via difftastic (placeholder)",
     )
     parser.add_argument("--debug", action="store_true", help="Debug logging to stderr")
+    parser.add_argument(
+        "--symbol-at",
+        action="store_true",
+        help="Resolve symbol at --file/--line (no branch diff; JSON to stdout)",
+    )
+    parser.add_argument("--file", metavar="PATH", help="Source file for --symbol-at")
+    parser.add_argument("--line", type=int, metavar="N", help="1-based line for --symbol-at")
+    parser.add_argument(
+        "--kind",
+        default="",
+        help="Kind filter for --symbol-at: function, class, namespace, or symbol (default)",
+    )
     return parser
 
 
 def _validate_args(args: argparse.Namespace) -> None:
     """Ensure the user passed a valid combination of mode flags."""
+    if args.symbol_at or (args.file is not None and args.line is not None):
+        if not args.file or args.line is None or args.line < 1:
+            raise ValueError("symbol-at mode requires --file PATH and --line N (N >= 1)")
+        return
+
     snapshot = bool(args.old_dir or args.new_dir)
     git_direct = bool(args.from_ref or args.to_ref)
     git_mr = bool(args.repo)
@@ -118,6 +137,19 @@ def _validate_args(args: argparse.Namespace) -> None:
         raise ValueError("direct Git mode requires both --from and --to")
 
 
+def _run_symbol_at(args: argparse.Namespace) -> int:
+    """Emit JSON for symbol-at-line resolution (Vim Flog integration)."""
+    assert args.file is not None and args.line is not None
+    result = symbol_at_path(
+        Path(args.file),
+        args.line,
+        ctags_executable=args.ctags,
+        kind_filter=args.kind,
+    )
+    sys.stdout.write(json.dumps(result, indent=2, sort_keys=True) + "\n")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     """CLI entry point registered as the ``semantic-branch-diff`` console script."""
     parser = build_parser()
@@ -130,6 +162,22 @@ def main(argv: list[str] | None = None) -> int:
 
     try:
         _validate_args(args)
+    except Exception as exc:
+        logger.error("%s", exc)
+        print(str(exc), file=sys.stderr)
+        return 1
+
+    if args.symbol_at or (args.file is not None and args.line is not None):
+        try:
+            return _run_symbol_at(args)
+        except Exception as exc:
+            logger.error("%s", exc)
+            if args.debug:
+                logger.exception("fatal error")
+            print(str(exc), file=sys.stderr)
+            return 1
+
+    try:
         result = semantic_diff(
             repo=args.repo,
             base=args.base,
