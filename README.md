@@ -170,7 +170,16 @@ Or build a two-commit Git repo and diff `HEAD~1..HEAD`:
 See [examples/01_added_methods/README.md](examples/01_added_methods/README.md) for
 expected output and file layout.
 
-## Vim
+## Vim (vim-semantic-ctags-diff plugin)
+
+When used from the Vim plugin, **no pip install of this package** is required.
+The plugin runs:
+
+```bash
+PYTHONPATH=submodules/semantic-ctags-diff python3 -m semantic_branch_diff.cli ...
+```
+
+You still need **PyDriller** and **python-ctags3** importable by that Python.
 
 ```vim
 :read !semantic-branch-diff --repo . --base main --head HEAD --format markdown
