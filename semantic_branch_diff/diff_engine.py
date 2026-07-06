@@ -283,6 +283,213 @@ def _signature_changed(old_sym: Symbol, new_sym: Symbol) -> bool:
     return bool(old_sym.signature and new_sym.signature and old_sym.signature != new_sym.signature)
 
 
+def _collect_tree_files(root: Path, extensions: tuple[str, ...]) -> dict[str, Path]:
+    """Map repo-relative paths to files under ``root`` matching ``extensions``.
+
+    Args:
+        root: Directory to scan recursively.
+        extensions: Allowed suffixes (e.g. ``.cpp``, ``.h``).
+
+    Returns:
+        Dict of relative POSIX path -> absolute :class:`Path`.
+    """
+    found: dict[str, Path] = {}
+    if not root.is_dir():
+        return found
+    for path in root.rglob("*"):
+        if path.is_file() and path.suffix.lower() in extensions:
+            found[path.relative_to(root).as_posix()] = path
+    return found
+
+
+def _infer_change_type(old_exists: bool, new_exists: bool) -> str:
+    """Map file presence on each side to a Git-like change type string."""
+    if old_exists and new_exists:
+        return "modify"
+    if new_exists:
+        return "add"
+    if old_exists:
+        return "delete"
+    return "unknown"
+
+
+def analyze_file_pair(
+    *,
+    display_path: str,
+    old_path: str,
+    new_path: str,
+    change_type: str,
+    old_content: str,
+    new_content: str,
+    added_lines: list[int],
+    deleted_lines: list[int],
+    ctags_executable: str,
+    extensions: tuple[str, ...],
+    use_pydriller_methods: bool,
+    tmp_dir: Path,
+    repo_path: str = "",
+) -> FileDiffResult:
+    """Compute semantic symbol diff for one file from in-memory old/new content.
+
+    Core per-file pipeline shared by Git mode and directory snapshot mode.
+    Runs ctags on both sides, classifies symbols, and attributes line changes.
+
+    Args:
+        display_path: Path shown in reports (usually the new or sole path).
+        old_path: Old-side path label for ctags.
+        new_path: New-side path label for ctags.
+        change_type: ``add``, ``delete``, ``modify``, etc.
+        old_content: Base revision text (empty when added).
+        new_content: Head revision text (empty when deleted).
+        added_lines: 1-based added line numbers in the new file.
+        deleted_lines: 1-based deleted line numbers in the old file.
+        ctags_executable: Ctags binary path.
+        extensions: Allowed suffixes (for skip check).
+        use_pydriller_methods: Whether to attach Lizard metrics.
+        tmp_dir: Shared temp directory for ctags runs.
+        repo_path: Optional repo path for PyDriller enrichment metadata.
+
+    Returns:
+        :class:`FileDiffResult` with symbol and file-scope classifications.
+    """
+    if not _extension_allowed(display_path, extensions):
+        return FileDiffResult(
+            path=display_path,
+            old_path=old_path,
+            change_type=change_type,
+            language=_language_for(display_path),
+            added_lines=[],
+            deleted_lines=[],
+            added_symbols=[],
+            removed_symbols=[],
+            modified_symbols=[],
+            file_scope_changes=FileScopeChanges(),
+            skipped=True,
+            skip_reason="extension_not_included",
+        )
+
+    if git_utils.is_binary_content(old_content) or git_utils.is_binary_content(new_content):
+        return FileDiffResult(
+            path=display_path,
+            old_path=old_path,
+            change_type=change_type,
+            language=_language_for(display_path),
+            added_lines=[],
+            deleted_lines=[],
+            added_symbols=[],
+            removed_symbols=[],
+            modified_symbols=[],
+            file_scope_changes=FileScopeChanges(),
+            skipped=True,
+            skip_reason="binary",
+        )
+
+    old_symbols = generate_symbols(
+        source_content=old_content,
+        source_path=old_path,
+        ctags_executable=ctags_executable,
+        tmp_dir=tmp_dir,
+    )
+    new_symbols = generate_symbols(
+        source_content=new_content,
+        source_path=new_path,
+        ctags_executable=ctags_executable,
+        tmp_dir=tmp_dir,
+    )
+
+    old_by_key = symbols_by_key(old_symbols)
+    new_by_key = symbols_by_key(new_symbols)
+    old_keys = set(old_by_key)
+    new_keys = set(new_by_key)
+
+    added_keys = new_keys - old_keys
+    removed_keys = old_keys - new_keys
+    common_keys = old_keys & new_keys
+
+    added_symbols = [_symbol_summary(new_by_key[k], display_path, "added") for k in sorted(added_keys, key=lambda x: x.qualified_name)]
+    removed_symbols = [
+        _symbol_summary(old_by_key[k], display_path, "removed") for k in sorted(removed_keys, key=lambda x: x.qualified_name)
+    ]
+
+    modified_symbols: list[ModifiedSymbolResult] = []
+
+    for line in added_lines:
+        sym = best_enclosing_symbol(new_symbols, line)
+        if sym is None or sym.key in added_keys:
+            continue
+
+    for line in deleted_lines:
+        sym = best_enclosing_symbol(old_symbols, line)
+        if sym is None or sym.key in removed_keys:
+            continue
+
+    for key in sorted(common_keys, key=lambda x: x.qualified_name):
+        old_sym = old_by_key[key]
+        new_sym = new_by_key[key]
+        changed_old = _lines_in_range(deleted_lines, old_sym.start_line, old_sym.end_line)
+        changed_new = _lines_in_range(added_lines, new_sym.start_line, new_sym.end_line)
+        if not changed_old and not changed_new and not _signature_changed(old_sym, new_sym):
+            continue
+        py_meta = enrich_modified_symbol(
+            _repo_path=repo_path,
+            old_content=old_content,
+            new_content=new_content,
+            file_path=display_path,
+            qualified_name=new_sym.qualified_name,
+            enabled=use_pydriller_methods,
+        )
+        modified_symbols.append(
+            ModifiedSymbolResult(
+                kind=new_sym.kind,
+                qualified_name=new_sym.qualified_name,
+                name=new_sym.name,
+                scope=new_sym.scope,
+                file=display_path,
+                old_range=[old_sym.start_line, old_sym.end_line],
+                new_range=[new_sym.start_line, new_sym.end_line],
+                changed_old_lines=changed_old,
+                changed_new_lines=changed_new,
+                pydriller=py_meta,
+            )
+        )
+
+    modified_old_ranges = {tuple(m.old_range) for m in modified_symbols}
+    modified_new_ranges = {tuple(m.new_range) for m in modified_symbols}
+
+    def _line_in_modified_ranges(line: int, ranges: set[tuple[int, int]], symbols: list[Symbol]) -> bool:
+        sym = best_enclosing_symbol(symbols, line)
+        if sym and sym.key in common_keys:
+            return True
+        return any(start <= line <= end for start, end in ranges)
+
+    file_scope_added = sorted(
+        ln
+        for ln in added_lines
+        if not _line_in_modified_ranges(ln, modified_new_ranges, new_symbols) and best_enclosing_symbol(new_symbols, ln) is None
+    )
+    file_scope_deleted = sorted(
+        ln
+        for ln in deleted_lines
+        if not _line_in_modified_ranges(ln, modified_old_ranges, old_symbols) and best_enclosing_symbol(old_symbols, ln) is None
+    )
+
+    return FileDiffResult(
+        path=display_path,
+        old_path=old_path,
+        change_type=change_type,
+        language=_language_for(display_path),
+        added_lines=added_lines,
+        deleted_lines=deleted_lines,
+        added_symbols=added_symbols,
+        removed_symbols=removed_symbols,
+        modified_symbols=modified_symbols,
+        file_scope_changes=FileScopeChanges(
+            added_lines=file_scope_added,
+            deleted_lines=file_scope_deleted,
+        ),
+    )
+
+
 def analyze_file_diff(
     *,
     repo: Path,
@@ -348,7 +555,6 @@ def analyze_file_diff(
             skip_reason="binary",
         )
 
-    # Load blob content at each ref (empty string when side does not exist).
     old_content = git_utils.show_file_at_ref(repo, merge_base, old_path) if changed.change_type != "add" and old_path else ""
     new_content = git_utils.show_file_at_ref(repo, head_commit, new_path) if changed.change_type != "delete" and new_path else ""
 
@@ -356,174 +562,115 @@ def analyze_file_diff(
     diff_text = git_utils.unified_diff(repo, merge_base, head_commit, diff_path or None)
     added_lines, deleted_lines = git_utils.parse_diff_line_numbers(diff_text)
 
-    # Build symbol inventories via ctags for old and new revisions.
-    old_symbols = (
-        generate_symbols(
-            source_content=old_content or "",
-            source_path=old_path,
-            ctags_executable=ctags_executable,
-            tmp_dir=tmp_dir,
-        )
-        if old_content is not None
-        else []
-    )
-    new_symbols = (
-        generate_symbols(
-            source_content=new_content or "",
-            source_path=new_path,
-            ctags_executable=ctags_executable,
-            tmp_dir=tmp_dir,
-        )
-        if new_content is not None
-        else []
-    )
-
-    old_by_key = symbols_by_key(old_symbols)
-    new_by_key = symbols_by_key(new_symbols)
-    old_keys = set(old_by_key)
-    new_keys = set(new_by_key)
-
-    # Set algebra: keys only on one side are added/removed; intersection may be modified.
-    added_keys = new_keys - old_keys
-    removed_keys = old_keys - new_keys
-    common_keys = old_keys & new_keys
-
-    added_symbols = [_symbol_summary(new_by_key[k], display_path, "added") for k in sorted(added_keys, key=lambda x: x.qualified_name)]
-    removed_symbols = [
-        _symbol_summary(old_by_key[k], display_path, "removed") for k in sorted(removed_keys, key=lambda x: x.qualified_name)
-    ]
-
-    modified_symbols: list[ModifiedSymbolResult] = []
-    file_scope_added: list[int] = []
-    file_scope_deleted: list[int] = []
-
-    # First pass: collect lines with no enclosing symbol (preliminary file-scope).
-    for line in added_lines:
-        sym = best_enclosing_symbol(new_symbols, line)
-        if sym is None or sym.key in added_keys:
-            if sym is None:
-                file_scope_added.append(line)
-            continue
-
-    for line in deleted_lines:
-        sym = best_enclosing_symbol(old_symbols, line)
-        if sym is None or sym.key in removed_keys:
-            if sym is None:
-                file_scope_deleted.append(line)
-            continue
-
-    # Second pass: symbols in both revisions with intersecting line or signature changes.
-    for key in sorted(common_keys, key=lambda x: x.qualified_name):
-        old_sym = old_by_key[key]
-        new_sym = new_by_key[key]
-        changed_old = _lines_in_range(deleted_lines, old_sym.start_line, old_sym.end_line)
-        changed_new = _lines_in_range(added_lines, new_sym.start_line, new_sym.end_line)
-        if not changed_old and not changed_new and not _signature_changed(old_sym, new_sym):
-            continue
-        py_meta = enrich_modified_symbol(
-            _repo_path=str(repo),
-            old_content=old_content,
-            new_content=new_content,
-            file_path=display_path,
-            qualified_name=new_sym.qualified_name,
-            enabled=use_pydriller_methods,
-        )
-        modified_symbols.append(
-            ModifiedSymbolResult(
-                kind=new_sym.kind,
-                qualified_name=new_sym.qualified_name,
-                name=new_sym.name,
-                scope=new_sym.scope,
-                file=display_path,
-                old_range=[old_sym.start_line, old_sym.end_line],
-                new_range=[new_sym.start_line, new_sym.end_line],
-                changed_old_lines=changed_old,
-                changed_new_lines=changed_new,
-                pydriller=py_meta,
-            )
-        )
-
-    modified_old_ranges = {tuple(m.old_range) for m in modified_symbols}
-    modified_new_ranges = {tuple(m.new_range) for m in modified_symbols}
-
-    def _line_in_modified_ranges(line: int, ranges: set[tuple[int, int]], symbols: list[Symbol]) -> bool:
-        """Return True when line is inside a modified symbol (not file-scope)."""
-        sym = best_enclosing_symbol(symbols, line)
-        if sym and sym.key in common_keys:
-            return True
-        return any(start <= line <= end for start, end in ranges)
-
-    # Final file-scope: lines outside any symbol and not inside modified symbol ranges.
-    file_scope_added = sorted(
-        ln
-        for ln in added_lines
-        if not _line_in_modified_ranges(ln, modified_new_ranges, new_symbols) and best_enclosing_symbol(new_symbols, ln) is None
-    )
-    file_scope_deleted = sorted(
-        ln
-        for ln in deleted_lines
-        if not _line_in_modified_ranges(ln, modified_old_ranges, old_symbols) and best_enclosing_symbol(old_symbols, ln) is None
-    )
-
-    return FileDiffResult(
-        path=display_path,
+    return analyze_file_pair(
+        display_path=display_path,
         old_path=old_path,
+        new_path=new_path,
         change_type=changed.change_type,
-        language=_language_for(display_path),
+        old_content=old_content or "",
+        new_content=new_content or "",
         added_lines=added_lines,
         deleted_lines=deleted_lines,
-        added_symbols=added_symbols,
-        removed_symbols=removed_symbols,
-        modified_symbols=modified_symbols,
-        file_scope_changes=FileScopeChanges(
-            added_lines=file_scope_added,
-            deleted_lines=file_scope_deleted,
-        ),
+        ctags_executable=ctags_executable,
+        extensions=extensions,
+        use_pydriller_methods=use_pydriller_methods,
+        tmp_dir=tmp_dir,
+        repo_path=str(repo),
     )
 
 
-def semantic_diff(
+def _build_summary(file_results: list[FileDiffResult]) -> dict[str, int]:
+    """Aggregate symbol counts across all per-file results."""
+    return {
+        "files_changed": len(file_results),
+        "symbols_added": sum(len(f.added_symbols) for f in file_results),
+        "symbols_removed": sum(len(f.removed_symbols) for f in file_results),
+        "symbols_modified": sum(len(f.modified_symbols) for f in file_results),
+    }
+
+
+def semantic_diff_directories(
+    old_dir: str | Path,
+    new_dir: str | Path,
     *,
-    repo: str,
-    base: str = "main",
-    head: str = "HEAD",
     ctags_executable: str = "ctags",
     extensions: tuple[str, ...] = DEFAULT_EXTENSIONS,
     use_pydriller_methods: bool = True,
-    debug: bool = False,
-    with_difftastic: bool = False,
 ) -> SemanticDiffResult:
-    """Compare ``head`` against ``base`` using merge-base semantics and ctags symbols.
+    """Compare two directory trees (``old/`` and ``new/``) without Git.
 
-    Public API entry point. Resolves refs, lists files changed from
-    ``merge_base(base, head)`` to ``head``, and runs
-    :func:`analyze_file_diff` on each eligible path.
+    Intended for examples, tests, and local before/after snapshots. Each
+    relative path present in either tree is treated as one changed file.
 
     Args:
-        repo: Path to repository (any directory inside the worktree).
-        base: Base branch or ref (e.g. ``main``).
-        head: Head branch or ref (default ``HEAD``).
+        old_dir: Directory containing the base revision (e.g. ``examples/.../old``).
+        new_dir: Directory containing the head revision (e.g. ``examples/.../new``).
         ctags_executable: Ctags binary path.
         extensions: File suffixes to analyze.
-        use_pydriller_methods: Enable Lizard enrichment on modified symbols.
-        debug: Enable debug logging when ``True``.
-        with_difftastic: Placeholder for future structural diff hook.
+        use_pydriller_methods: Whether to attach Lizard metrics.
 
     Returns:
-        :class:`SemanticDiffResult` with per-file symbol changes and summary counts.
+        :class:`SemanticDiffResult` with synthetic ref labels ``old`` / ``new``.
     """
-    if debug:
-        logging.basicConfig(level=logging.DEBUG)
+    old_root = Path(old_dir).resolve()
+    new_root = Path(new_dir).resolve()
+    old_files = _collect_tree_files(old_root, extensions)
+    new_files = _collect_tree_files(new_root, extensions)
+    all_paths = sorted(set(old_files) | set(new_files))
 
-    if with_difftastic:
-        logger.debug("difftastic hook requested but not yet implemented")
+    file_results: list[FileDiffResult] = []
+    with tempfile.TemporaryDirectory(prefix="semantic_branch_diff_") as tmp:
+        tmp_dir = Path(tmp)
+        for rel_path in all_paths:
+            old_exists = rel_path in old_files
+            new_exists = rel_path in new_files
+            change_type = _infer_change_type(old_exists, new_exists)
+            old_content = old_files[rel_path].read_text(encoding="utf-8") if old_exists else ""
+            new_content = new_files[rel_path].read_text(encoding="utf-8") if new_exists else ""
+            diff_text = git_utils.diff_texts(old_content, new_content, rel_path, rel_path)
+            added_lines, deleted_lines = git_utils.parse_diff_line_numbers(diff_text)
+            file_results.append(
+                analyze_file_pair(
+                    display_path=rel_path,
+                    old_path=rel_path,
+                    new_path=rel_path,
+                    change_type=change_type,
+                    old_content=old_content,
+                    new_content=new_content,
+                    added_lines=added_lines,
+                    deleted_lines=deleted_lines,
+                    ctags_executable=ctags_executable,
+                    extensions=extensions,
+                    use_pydriller_methods=use_pydriller_methods,
+                    tmp_dir=tmp_dir,
+                    repo_path=str(new_root),
+                )
+            )
 
-    # Resolve worktree root and PR-style comparison range.
-    repo_root = git_utils.resolve_repo_root(repo)
-    mb = git_utils.merge_base(repo_root, base, head)
-    head_commit = git_utils.rev_parse(repo_root, head)
+    return SemanticDiffResult(
+        repo=str(new_root),
+        base_ref="old",
+        head_ref="new",
+        merge_base="old",
+        head_commit="new",
+        files=file_results,
+        summary=_build_summary(file_results),
+    )
 
-    changed_files = git_utils.list_changed_files(repo_root, mb, head_commit)
+
+def _semantic_diff_commits(
+    *,
+    repo_root: Path,
+    from_commit: str,
+    to_commit: str,
+    base_label: str,
+    head_label: str,
+    ctags_executable: str,
+    extensions: tuple[str, ...],
+    use_pydriller_methods: bool,
+) -> SemanticDiffResult:
+    """Compare two resolved commits inside a repository."""
+    changed_files = git_utils.list_changed_files(repo_root, from_commit, to_commit)
     file_results: list[FileDiffResult] = []
 
     with tempfile.TemporaryDirectory(prefix="semantic_branch_diff_") as tmp:
@@ -536,8 +683,8 @@ def semantic_diff(
             file_results.append(
                 analyze_file_diff(
                     repo=repo_root,
-                    merge_base=mb,
-                    head_commit=head_commit,
+                    merge_base=from_commit,
+                    head_commit=to_commit,
                     changed=changed,
                     ctags_executable=ctags_executable,
                     extensions=extensions,
@@ -546,21 +693,115 @@ def semantic_diff(
                 )
             )
 
-    symbols_added = sum(len(f.added_symbols) for f in file_results)
-    symbols_removed = sum(len(f.removed_symbols) for f in file_results)
-    symbols_modified = sum(len(f.modified_symbols) for f in file_results)
-
     return SemanticDiffResult(
         repo=str(repo_root),
-        base_ref=base,
-        head_ref=head,
-        merge_base=mb,
-        head_commit=head_commit,
+        base_ref=base_label,
+        head_ref=head_label,
+        merge_base=from_commit,
+        head_commit=to_commit,
         files=file_results,
-        summary={
-            "files_changed": len(file_results),
-            "symbols_added": symbols_added,
-            "symbols_removed": symbols_removed,
-            "symbols_modified": symbols_modified,
-        },
+        summary=_build_summary(file_results),
+    )
+
+
+def semantic_diff(
+    *,
+    repo: str | None = None,
+    base: str = "main",
+    head: str = "HEAD",
+    from_ref: str | None = None,
+    to_ref: str | None = None,
+    use_merge_base: bool = True,
+    old_dir: str | Path | None = None,
+    new_dir: str | Path | None = None,
+    ctags_executable: str = "ctags",
+    extensions: tuple[str, ...] = DEFAULT_EXTENSIONS,
+    use_pydriller_methods: bool = True,
+    debug: bool = False,
+    with_difftastic: bool = False,
+) -> SemanticDiffResult:
+    """Compare two revisions and return a ctags-based semantic diff.
+
+    Supports three modes:
+
+    1. **Directory snapshots** — pass ``old_dir`` and ``new_dir`` (no Git).
+    2. **Commit-to-commit** — pass ``repo``, ``from_ref``, and ``to_ref``.
+    3. **Branch / MR** — pass ``repo``, ``base``, and ``head`` (uses merge-base
+       when ``use_merge_base=True``, the default).
+
+    Args:
+        repo: Git repository path (required for Git modes).
+        base: Base branch for MR-style comparison.
+        head: Head branch for MR-style comparison.
+        from_ref: Explicit older commit/branch (disables merge-base when paired).
+        to_ref: Explicit newer commit/branch.
+        use_merge_base: When ``True`` with ``base``/``head``, diff ``merge-base..head``.
+        old_dir: Base directory tree for snapshot mode.
+        new_dir: Head directory tree for snapshot mode.
+        ctags_executable: Ctags binary path.
+        extensions: File suffixes to analyze.
+        use_pydriller_methods: Enable Lizard enrichment on modified symbols.
+        debug: Enable debug logging when ``True``.
+        with_difftastic: Placeholder for future structural diff hook.
+
+    Returns:
+        :class:`SemanticDiffResult` with per-file symbol changes and summary counts.
+
+    Raises:
+        ValueError: When required arguments for the selected mode are missing.
+    """
+    if debug:
+        logging.basicConfig(level=logging.DEBUG)
+
+    if with_difftastic:
+        logger.debug("difftastic hook requested but not yet implemented")
+
+    if old_dir is not None or new_dir is not None:
+        if old_dir is None or new_dir is None:
+            raise ValueError("both old_dir and new_dir are required for directory comparison")
+        return semantic_diff_directories(
+            old_dir,
+            new_dir,
+            ctags_executable=ctags_executable,
+            extensions=extensions,
+            use_pydriller_methods=use_pydriller_methods,
+        )
+
+    if repo is None:
+        raise ValueError("repo is required for Git-based comparison")
+
+    repo_root = git_utils.resolve_repo_root(repo)
+
+    if from_ref is not None or to_ref is not None:
+        if from_ref is None or to_ref is None:
+            raise ValueError("both from_ref and to_ref are required")
+        from_commit = git_utils.rev_parse(repo_root, from_ref)
+        to_commit = git_utils.rev_parse(repo_root, to_ref)
+        return _semantic_diff_commits(
+            repo_root=repo_root,
+            from_commit=from_commit,
+            to_commit=to_commit,
+            base_label=from_ref,
+            head_label=to_ref,
+            ctags_executable=ctags_executable,
+            extensions=extensions,
+            use_pydriller_methods=use_pydriller_methods,
+        )
+
+    if use_merge_base:
+        from_commit = git_utils.merge_base(repo_root, base, head)
+        to_commit = git_utils.rev_parse(repo_root, head)
+    else:
+        from_commit = git_utils.rev_parse(repo_root, base)
+        to_commit = git_utils.rev_parse(repo_root, head)
+
+    return _semantic_diff_commits(
+        repo_root=repo_root,
+        from_commit=from_commit,
+        to_commit=to_commit,
+        base_label=base,
+        head_label=head,
+        ctags_executable=ctags_executable,
+        extensions=extensions,
+        use_pydriller_methods=use_pydriller_methods,
     )

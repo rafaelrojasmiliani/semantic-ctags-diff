@@ -3,10 +3,14 @@
 Wraps ``git`` CLI calls used by the diff engine to resolve refs, list changed
 files, fetch blob content, and parse unified diffs. PyDriller is not required
 here; subprocess git gives precise merge-base..head semantics for PR-style diffs.
+
+Also provides :func:`diff_texts` for line-level diffs between arbitrary strings
+(used by directory snapshot mode in examples).
 """
 
 from __future__ import annotations
 
+import difflib
 import logging
 import subprocess
 from dataclasses import dataclass
@@ -289,3 +293,42 @@ def detect_binary_diff(repo: str | Path, from_ref: str, to_ref: str, path: str) 
     """
     diff = unified_diff(repo, from_ref, to_ref, path)
     return "Binary files" in diff
+
+
+def diff_texts(old_content: str, new_content: str, old_path: str, new_path: str) -> str:
+    """Build a zero-context unified diff between two in-memory file versions.
+
+    Used when comparing directory snapshots (``old/`` vs ``new/`` example
+    folders) without invoking git.
+
+    Args:
+        old_content: Text at the base revision (``""`` when the file is new).
+        new_content: Text at the head revision (``""`` when the file is deleted).
+        old_path: Label for the ``---`` file line.
+        new_path: Label for the ``+++`` file line.
+
+    Returns:
+        Unified diff string compatible with :func:`parse_diff_line_numbers`.
+    """
+    return "".join(
+        difflib.unified_diff(
+            old_content.splitlines(keepends=True),
+            new_content.splitlines(keepends=True),
+            fromfile=old_path,
+            tofile=new_path,
+            lineterm="",
+            n=0,
+        )
+    )
+
+
+def is_binary_content(content: str) -> bool:
+    """Return whether raw content looks binary (NUL byte present).
+
+    Args:
+        content: File text or bytes decoded as text.
+
+    Returns:
+        ``True`` when a NUL byte is found.
+    """
+    return "\0" in content

@@ -16,4 +16,5 @@ semantic_branch_diff.egg-info/requires.txt
 semantic_branch_diff.egg-info/top_level.txt
 tests/test_ctags_parsing.py
 tests/test_diff_engine.py
+tests/test_examples.py
 tests/test_symbol_normalization.py

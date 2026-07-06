@@ -3,6 +3,12 @@
 Parses user arguments, invokes :func:`semantic_branch_diff.diff_engine.semantic_diff`,
 and writes JSON or Markdown to stdout or ``--out``. Debug logs always go to stderr
 so stdout remains machine-readable for Vim ``:read !`` integration.
+
+Comparison modes:
+
+- ``--repo`` + ``--base`` + ``--head`` — merge-request style (merge-base..head)
+- ``--repo`` + ``--from`` + ``--to`` — direct commit-to-commit
+- ``--old-dir`` + ``--new-dir`` — directory snapshots (examples, no Git)
 """
 
 from __future__ import annotations
@@ -30,11 +36,9 @@ def _parse_extensions(value: str) -> tuple[str, ...]:
     Returns:
         Tuple of normalized extensions, each beginning with ``.``.
     """
-    # Split on commas and drop empty tokens from trailing commas.
     parts = [p.strip() for p in value.split(",") if p.strip()]
     normalized: list[str] = []
     for part in parts:
-        # Prepend dot when the user omitted it (``cpp`` -> ``.cpp``).
         normalized.append(part if part.startswith(".") else f".{part}")
     return tuple(normalized)
 
@@ -42,19 +46,25 @@ def _parse_extensions(value: str) -> tuple[str, ...]:
 def build_parser() -> argparse.ArgumentParser:
     """Construct the ``semantic-branch-diff`` argument parser.
 
-    Centralizes all CLI flags so ``main`` and tests can share the same schema.
-    Defaults mirror the package spec (JSON output, ``HEAD`` as head ref, etc.).
-
     Returns:
         Configured :class:`argparse.ArgumentParser` ready for ``parse_args``.
     """
     parser = argparse.ArgumentParser(
         prog="semantic-branch-diff",
-        description="Semantic branch diff using ctags and Git",
+        description="Semantic diff using ctags (branches, commits, or directory snapshots)",
     )
-    parser.add_argument("--repo", required=True, help="Local Git repository path")
-    parser.add_argument("--base", required=True, help="Base branch/ref")
-    parser.add_argument("--head", default="HEAD", help="Head branch/ref")
+    parser.add_argument("--repo", help="Local Git repository path (Git modes)")
+    parser.add_argument("--base", default="main", help="Base branch/ref (MR mode)")
+    parser.add_argument("--head", default="HEAD", help="Head branch/ref (MR mode)")
+    parser.add_argument("--from", dest="from_ref", metavar="REF", help="From commit/ref (direct mode)")
+    parser.add_argument("--to", dest="to_ref", metavar="REF", help="To commit/ref (direct mode)")
+    parser.add_argument(
+        "--no-merge-base",
+        action="store_true",
+        help="Compare base..head directly without merge-base (with --base/--head)",
+    )
+    parser.add_argument("--old-dir", help="Old directory tree (snapshot mode)")
+    parser.add_argument("--new-dir", help="New directory tree (snapshot mode)")
     parser.add_argument(
         "--format",
         choices=("json", "markdown"),
@@ -88,33 +98,47 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _validate_args(args: argparse.Namespace) -> None:
+    """Ensure the user passed a valid combination of mode flags."""
+    snapshot = bool(args.old_dir or args.new_dir)
+    git_direct = bool(args.from_ref or args.to_ref)
+    git_mr = bool(args.repo)
+
+    if snapshot:
+        if not args.old_dir or not args.new_dir:
+            raise ValueError("snapshot mode requires both --old-dir and --new-dir")
+        if git_mr or git_direct:
+            raise ValueError("use either snapshot mode (--old-dir/--new-dir) or Git mode (--repo), not both")
+        return
+
+    if not args.repo:
+        raise ValueError("Git mode requires --repo, or use --old-dir and --new-dir for snapshots")
+
+    if git_direct and (args.from_ref is None or args.to_ref is None):
+        raise ValueError("direct Git mode requires both --from and --to")
+
+
 def main(argv: list[str] | None = None) -> int:
-    """CLI entry point registered as the ``semantic-branch-diff`` console script.
-
-    Workflow: parse args -> run semantic diff -> render -> write stdout/file.
-    Returns exit code 1 on fatal errors so shell/Vim can detect failure.
-
-    Args:
-        argv: Optional argument list; defaults to ``sys.argv[1:]`` when ``None``.
-
-    Returns:
-        ``0`` on success, ``1`` when the diff pipeline raises.
-    """
+    """CLI entry point registered as the ``semantic-branch-diff`` console script."""
     parser = build_parser()
     args = parser.parse_args(argv)
 
-    # Route logs to stderr; stdout is reserved for the report body.
     if args.debug:
         logging.basicConfig(level=logging.DEBUG, stream=sys.stderr)
     else:
         logging.basicConfig(level=logging.WARNING, stream=sys.stderr)
 
     try:
-        # Delegate branch comparison and symbol analysis to the core API.
+        _validate_args(args)
         result = semantic_diff(
             repo=args.repo,
             base=args.base,
             head=args.head,
+            from_ref=args.from_ref,
+            to_ref=args.to_ref,
+            use_merge_base=not args.no_merge_base,
+            old_dir=args.old_dir,
+            new_dir=args.new_dir,
             ctags_executable=args.ctags,
             extensions=_parse_extensions(args.include),
             use_pydriller_methods=not args.no_pydriller_methods,
@@ -128,7 +152,6 @@ def main(argv: list[str] | None = None) -> int:
         print(str(exc), file=sys.stderr)
         return 1
 
-    # Serialize to the requested format (stable sorted JSON or human Markdown).
     output = render_json(result) if args.format == "json" else render_markdown(result)
 
     if args.out:
