@@ -4,6 +4,81 @@ Ctags-powered **semantic diffs** for code review: symbols added, removed, and
 modified — not just changed line numbers. Works with **branches** (merge-request
 style), **commits**, or **directory snapshots** (no Git required).
 
+## How it works: ctags line ranges
+
+The semantic diff is **not** an AST diff. It is built on two layers:
+
+1. **Git** reports which files and line numbers changed between two refs.
+2. **ctags** reports each symbol’s **start line**, **end line** (when available),
+   **kind** (function, class, method, …), and **name/scope**.
+
+Each changed line is mapped to the **innermost enclosing symbol** (a method beats
+its class; a class beats its namespace). Symbols are then classified as added,
+removed, modified, or file-scope (lines outside any tag range).
+
+This uses a **classic ctags tags file** (`-f tags` + `python-ctags3`). Ctags JSON
+output is **not** used or required.
+
+### Example
+
+**Old** header — constructor only:
+
+```cpp
+class RobotController {
+public:
+  RobotController();   // lines 4–4
+};
+```
+
+**New** header — two methods added:
+
+```cpp
+class RobotController {
+public:
+  RobotController();
+  void reset();              // lines 6–6   ← ctags: function, line 6
+  void configure(double);    // lines 7–7   ← ctags: function, line 7
+};
+```
+
+**New** source file:
+
+```cpp
+void RobotController::configure(double x) {  // ctags: lines 12–15
+  m_gain = x;
+}
+```
+
+Running a snapshot diff reports **added symbols** by name, not just “lines 6–7
+changed”:
+
+```text
+Added symbols
+=============
+
+Functions:
+  + ImFusion::Robotics::RobotController::configure
+  + ImFusion::Robotics::RobotController::reset
+  + ImFusion::Robotics::RobotController::isReady
+```
+
+If you edit line 13 inside `configure()`, Git sees one changed line; ctags knows
+that line 13 ∈ `configure` (range 12–15), so the report says **modified function
+`configure`**, not merely “line 13 changed”.
+
+Try it:
+
+```bash
+semantic-branch-diff \
+  --old-dir examples/01_added_methods/old \
+  --new-dir examples/01_added_methods/new \
+  --format markdown
+```
+
+**Limits:** regions ctags cannot tag (some macros, templates, unsupported
+extensions) appear as **file-scope** changes or are skipped. Exuberant ctags may
+omit `end` lines; the tool estimates function ends from `{`/`}`.
+
 ## Install
 
 ```bash
