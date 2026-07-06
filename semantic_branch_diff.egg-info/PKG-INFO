@@ -1,0 +1,35 @@
+Metadata-Version: 2.4
+Name: semantic-branch-diff
+Version: 0.1.0
+Summary: Semantic branch diffs for C++ using ctags and PyDriller
+Requires-Python: >=3.10
+Description-Content-Type: text/markdown
+Requires-Dist: pydriller>=2.0
+Requires-Dist: python-ctags3>=1.5
+Provides-Extra: dev
+Requires-Dist: pytest>=7.0; extra == "dev"
+
+# semantic-branch-diff
+
+Semantic branch diffs for C++ repositories using Universal Ctags and PyDriller.
+
+## Install
+
+```bash
+pip install -e ".[dev]"
+```
+
+## CLI
+
+```bash
+semantic-branch-diff --repo . --base main --head HEAD --format markdown
+```
+
+## Python API
+
+```python
+from semantic_branch_diff import semantic_diff
+
+result = semantic_diff(repo="/path/to/repo", base="main", head="HEAD")
+print(result.to_dict())
+```

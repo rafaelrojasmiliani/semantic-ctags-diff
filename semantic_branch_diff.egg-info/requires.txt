@@ -1,0 +1,5 @@
+pydriller>=2.0
+python-ctags3>=1.5
+
+[dev]
+pytest>=7.0
