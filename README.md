@@ -187,6 +187,16 @@ You still need **PyDriller** and **python-ctags3** importable by that Python.
 
 Debug logs go to **stderr**; stdout is only the report.
 
+### Difftastic is optional
+
+The `--with-difftastic` flag is a placeholder and difftastic is **not** required
+by this library — the semantic diff is fully computed from ctags + Git. If
+`difft` is absent, everything still works.
+
+Difftastic-based file diffs live in the Vim plugin instead (`:Gdifftastic` /
+`:Gvdifftastic`), which run `difft` as git's external diff. That feature needs
+only `git` + `difft`, independent of this Python module.
+
 ### Symbol at cursor (Flog integration)
 
 Resolve the enclosing ctags symbol at a line — used by vim-semantic-ctags-diff
