@@ -1,5 +1,7 @@
 # semantic-branch-diff
 
+[![CI](https://github.com/rafaelrojasmiliani/semantic-ctags-diff/actions/workflows/ci.yml/badge.svg)](https://github.com/rafaelrojasmiliani/semantic-ctags-diff/actions/workflows/ci.yml)
+
 Ctags-powered **semantic diffs** for code review: symbols added, removed, and
 modified — not just changed line numbers. Works with **branches** (merge-request
 style), **commits**, or **directory snapshots** (no Git required).

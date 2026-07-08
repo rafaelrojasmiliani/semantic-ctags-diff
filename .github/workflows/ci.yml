@@ -1,0 +1,56 @@
+# =============================================================================
+# ci.yml — Continuous integration for semantic-branch-diff (Python)
+# =============================================================================
+# WHAT:  Runs the pytest suite for the semantic branch diff library.
+# WHY:   Core diff logic (ctags + Git + PyDriller) must stay correct when the
+#        package is developed standalone or consumed by the Vim plugin submodule.
+# WHO:   GitHub Actions on push/PR to main; badge in README.md. Also executed
+#        from the parent vim-semantic-ctags-diff repo CI (S03 there).
+# STRATEGY:
+#   S01 — Checkout this repository only (no parent Vim tree).
+#   S02 — Install git and universal-ctags (required by tests).
+#   S03 — Install package editable with dev deps; run pytest -v.
+# =============================================================================
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Unit tests
+    runs-on: ubuntu-latest
+
+    steps:
+      # S01: Standalone library checkout — matches how pip/editable installs work.
+      - name: S01 — Checkout repository
+        uses: actions/checkout@v4
+
+      # S02: test_ctags_parsing and test_diff_engine need ctags + git on PATH.
+      - name: S02 — Install system packages
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y git universal-ctags
+
+      # S03: Editable install mirrors local dev; pytest uses pyproject testpaths.
+      - name: S03 — Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+
+      - name: S03 — Install package and dev dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[dev]"
+
+      - name: S03 — Run pytest
+        run: pytest -v
