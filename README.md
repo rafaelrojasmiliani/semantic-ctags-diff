@@ -100,6 +100,12 @@ Compares `merge-base(base, head)..head` — same as a typical PR:
 semantic-branch-diff --repo . --base main --head feature --format markdown
 ```
 
+Limit to one file (faster on large repos; repeatable):
+
+```bash
+semantic-branch-diff --repo . --base main --head HEAD --path src/foo.cpp --format markdown
+```
+
 ### Commit to commit
 
 ```bash

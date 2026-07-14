@@ -161,3 +161,23 @@ def test_feature_branch_comparison(git_repo: Path):
     result = semantic_diff(repo=str(git_repo), base="main", head="feature", use_pydriller_methods=False)
     file = next(f for f in result.files if f.path.endswith("RobotState.cpp"))
     assert file.modified_symbols
+
+
+def test_path_filter_limits_files(git_repo: Path):
+    """--path should restrict analysis to one repo-relative file."""
+    write_file(
+        git_repo / "Source" / "RobotState.cpp",
+        BASE_CPP.replace("return std::abs(x) < 1e-6;", "return std::abs(x) < 1e-9;"),
+    )
+    write_file(git_repo / "Source" / "Other.cpp", BASE_CPP)
+    commit_all(git_repo, "change two files")
+
+    result = semantic_diff(
+        repo=str(git_repo),
+        base="main",
+        head="HEAD",
+        use_pydriller_methods=False,
+        paths=("Source/RobotState.cpp",),
+    )
+    assert len(result.files) == 1
+    assert result.files[0].path.endswith("RobotState.cpp")

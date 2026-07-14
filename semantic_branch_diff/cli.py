@@ -98,6 +98,12 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--debug", action="store_true", help="Debug logging to stderr")
     parser.add_argument(
+        "--path",
+        action="append",
+        metavar="FILE",
+        help="Limit Git diff to repo-relative file path (repeatable)",
+    )
+    parser.add_argument(
         "--symbol-at",
         action="store_true",
         help="Resolve symbol at --file/--line (no branch diff; JSON to stdout)",
@@ -192,6 +198,7 @@ def main(argv: list[str] | None = None) -> int:
             use_pydriller_methods=not args.no_pydriller_methods,
             debug=args.debug,
             with_difftastic=args.with_difftastic,
+            paths=tuple(args.path or ()),
         )
     except Exception as exc:
         logger.error("%s", exc)

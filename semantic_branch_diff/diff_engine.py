@@ -210,6 +210,18 @@ class SemanticDiffResult:
         }
 
 
+def _path_matches_filter(path: str, filters: tuple[str, ...]) -> bool:
+    """Return whether ``path`` matches any repo-relative filter entry."""
+    if not filters:
+        return True
+    norm = path.replace("\\", "/").lstrip("./")
+    for filt in filters:
+        f = filt.replace("\\", "/").lstrip("./")
+        if norm == f or norm.endswith("/" + f):
+            return True
+    return False
+
+
 def _extension_allowed(path: str, extensions: tuple[str, ...]) -> bool:
     """Check whether a file suffix is in the configured analyze list.
 
@@ -675,6 +687,7 @@ def _semantic_diff_commits(
     ctags_executable: str,
     extensions: tuple[str, ...],
     use_pydriller_methods: bool,
+    paths: tuple[str, ...] = (),
 ) -> SemanticDiffResult:
     """Compare two resolved commits inside a repository."""
     changed_files = git_utils.list_changed_files(repo_root, from_commit, to_commit)
@@ -685,6 +698,8 @@ def _semantic_diff_commits(
         for changed in changed_files:
             path = changed.new_path or changed.old_path
             if not path:
+                continue
+            if paths and not _path_matches_filter(path, paths):
                 continue
             logger.debug("analyzing %s (%s)", path, changed.change_type)
             file_results.append(
@@ -726,6 +741,7 @@ def semantic_diff(
     use_pydriller_methods: bool = True,
     debug: bool = False,
     with_difftastic: bool = False,
+    paths: tuple[str, ...] = (),
 ) -> SemanticDiffResult:
     """Compare two revisions and return a ctags-based semantic diff.
 
@@ -793,6 +809,7 @@ def semantic_diff(
             ctags_executable=ctags_executable,
             extensions=extensions,
             use_pydriller_methods=use_pydriller_methods,
+            paths=paths,
         )
 
     if use_merge_base:
@@ -811,4 +828,5 @@ def semantic_diff(
         ctags_executable=ctags_executable,
         extensions=extensions,
         use_pydriller_methods=use_pydriller_methods,
+        paths=paths,
     )
