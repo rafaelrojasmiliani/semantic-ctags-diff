@@ -28,12 +28,22 @@ KIND_PRIORITY: dict[str, int] = {
     "module": 5,
     "package": 5,
     "variable": 6,
+    "local": 6,
     "macro": 7,
     "file": 8,
 }
 
-FUNCTION_KINDS = frozenset({"function", "method", "constructor", "destructor", "member"})
+# ``member`` is deliberately absent: in ctags it means a class/struct/union DATA
+# field, not a method (methods are kind ``f``/``function``).
+FUNCTION_KINDS = frozenset({"function", "method", "constructor", "destructor"})
 CLASS_KINDS = frozenset({"class", "struct", "interface"})
+
+# Kinds that describe a class/struct/union data field.
+MEMBER_KINDS = frozenset({"member", "field"})
+
+# Too granular to report: locals and free/namespace-scope variables. Class
+# members stay, because a changed field is part of a type's public shape.
+NOISE_KINDS = frozenset({"variable", "local", "unknown"})
 
 
 @dataclass(frozen=True)
@@ -133,8 +143,14 @@ def effective_kind(raw_kind: str, name: str, scope: str, pattern: str) -> str:
             return "struct"
         if kind in {"n", "namespace"}:
             return "namespace"
-        if kind in {"m", "member"}:
-            return "method"
+        if kind in {"m", "member", "field"}:
+            # ctags 'm' is "class, struct, and union members" — a data field.
+            # Mapping it to "method" listed every field under Methods.
+            return "member"
+        if kind in {"l", "local"}:
+            return "local"
+        if kind in {"v", "variable"}:
+            return "variable"
         if kind in {"e", "enum"}:
             return "enum"
         return kind
@@ -158,6 +174,43 @@ def effective_kind(raw_kind: str, name: str, scope: str, pattern: str) -> str:
     if "(" in pattern:
         return "function"
     return "unknown"
+
+
+# Ctags names unnamed scopes ``__anon`` + a hash (``__anon37a8102f0111``), which
+# is meaningless outside the translation unit it was generated in and differs
+# between the two revisions being compared.
+_ANONYMOUS_SEGMENT = re.compile(r"__anon[0-9a-f]*", re.IGNORECASE)
+
+
+def is_anonymous(qualified_name: str) -> bool:
+    """Report whether a qualified name contains a ctags-generated anonymous scope.
+
+    Args:
+        qualified_name: Fully qualified symbol name.
+
+    Returns:
+        ``True`` for names such as ``ImFusion::Robotics::__anon37a8102f0111``.
+    """
+    return bool(_ANONYMOUS_SEGMENT.search(qualified_name))
+
+
+def is_reportable(kind: str, qualified_name: str) -> bool:
+    """Report whether a symbol is worth showing to a human reviewer.
+
+    Filters the two sources of noise in branch reports: locals and free
+    variables (too granular to be a reviewable API change), and symbols living
+    in an anonymous namespace (the generated name is not stable or meaningful).
+
+    Args:
+        kind: Normalized symbol kind.
+        qualified_name: Fully qualified symbol name.
+
+    Returns:
+        ``True`` when the symbol should appear in the Markdown report.
+    """
+    if kind in NOISE_KINDS:
+        return False
+    return not is_anonymous(qualified_name)
 
 
 def _join_scope(scope: str, name: str) -> str:
@@ -314,6 +367,11 @@ def symbol_key_from_tag_fields(
         Tuple ``(key, short_name, norm_scope)`` for building a :class:`Symbol`.
     """
     kind = effective_kind(raw_kind, name, scope, pattern)
+    # Some ctags flavors tag namespace- and file-scope variables as members too.
+    # Only a class-like container makes a tag a genuine data field; everything
+    # else is a plain variable and is filtered out of reports.
+    if kind in MEMBER_KINDS and not (class_field or interface_field):
+        kind = "variable"
     if "::" in name:
         qualified = name
     elif kind == "namespace":

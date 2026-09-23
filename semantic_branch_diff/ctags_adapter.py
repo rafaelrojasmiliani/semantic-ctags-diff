@@ -209,7 +209,10 @@ def _read_tags_file(tags_path: Path, source_path: str, source_content: str) -> l
         end_raw = _decode_field(entry, "end")
         pattern = _decode_field(entry, "pattern")
         scope = _decode_field(entry, "scope")
-        class_field = _decode_field(entry, "class")
+        # ctags emits the container as a kind-named field: class:, struct: or
+        # union:. All three are class-like, so a member of any of them is a real
+        # data field (as opposed to a namespace-scope variable).
+        class_field = _decode_field(entry, "class") or _decode_field(entry, "struct") or _decode_field(entry, "union")
         namespace_field = _decode_field(entry, "namespace")
         enum_field = _decode_field(entry, "enum")
         interface_field = _decode_field(entry, "interface")
