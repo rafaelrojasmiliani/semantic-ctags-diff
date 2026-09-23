@@ -176,10 +176,13 @@ def effective_kind(raw_kind: str, name: str, scope: str, pattern: str) -> str:
     return "unknown"
 
 
-# Ctags names unnamed scopes ``__anon`` + a hash (``__anon37a8102f0111``), which
-# is meaningless outside the translation unit it was generated in and differs
-# between the two revisions being compared.
-_ANONYMOUS_SEGMENT = re.compile(r"__anon[0-9a-f]*", re.IGNORECASE)
+# Ctags names unnamed scopes ``anon`` + a hash, usually underscore-prefixed
+# (``__anon37a8102f0111``, Exuberant's ``__anon1``). The name is generated per
+# translation unit, so it differs between the two revisions being compared and
+# means nothing to a reviewer. Matching the whole segment — ``anon`` followed by
+# nothing but hex — keeps real identifiers such as ``anonymize`` or
+# ``AnonymousPose`` out of the filter, since those continue with non-hex letters.
+_ANONYMOUS_SEGMENT = re.compile(r"^_*anon[0-9a-f]*$", re.IGNORECASE)
 
 
 def is_anonymous(qualified_name: str) -> bool:
@@ -189,9 +192,10 @@ def is_anonymous(qualified_name: str) -> bool:
         qualified_name: Fully qualified symbol name.
 
     Returns:
-        ``True`` for names such as ``ImFusion::Robotics::__anon37a8102f0111``.
+        ``True`` for names such as ``ImFusion::Robotics::__anon37a8102f0111``,
+        including the case where the generated segment is the symbol itself.
     """
-    return bool(_ANONYMOUS_SEGMENT.search(qualified_name))
+    return any(_ANONYMOUS_SEGMENT.match(part) for part in qualified_name.split("::"))
 
 
 def is_reportable(kind: str, qualified_name: str) -> bool:

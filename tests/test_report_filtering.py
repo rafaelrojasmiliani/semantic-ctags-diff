@@ -68,8 +68,20 @@ def test_anonymous_namespace_symbols_are_filtered():
     """Generated __anon names differ between revisions and mean nothing."""
     assert is_anonymous("ImFusion::Robotics::__anon37a8102f0111")
     assert is_anonymous("__anon37a8102f0111::HOLD_TOLERANCE")
-    assert not is_anonymous("ImFusion::Robotics::TestUtils")
     assert not is_reportable("namespace", "ImFusion::Robotics::__anon37a8102f0111")
+    # Nested anonymous scopes, and the bare segment as the symbol itself.
+    assert is_anonymous("ImFusion::Robotics::__anon37a8102f0111::IcmpHeader::__anon37a8102f0203")
+    assert is_anonymous("__anon37a8102f0302")
+    # Exuberant numbers them from 1 instead of hashing.
+    assert is_anonymous("ImFusion::__anon1::Helper")
+
+
+def test_real_identifiers_starting_with_anon_are_kept():
+    """Only 'anon' followed by nothing but hex is a generated scope."""
+    assert not is_anonymous("ImFusion::Robotics::TestUtils")
+    assert not is_anonymous("ImFusion::Robotics::anonymize")
+    assert not is_anonymous("ImFusion::AnonymousPose")
+    assert is_reportable("class", "ImFusion::AnonymousPose")
 
 
 def _summary(kind: str, qualified_name: str, classification: str = "added") -> SymbolSummary:
