@@ -32,16 +32,30 @@ def render_json(result: SemanticDiffResult, indent: int = 2) -> str:
     return json.dumps(result.to_dict(), indent=indent, sort_keys=True) + "\n"
 
 
-def _format_lines(lines: list[int]) -> str:
-    """Format a list of line numbers as comma-separated text for Markdown.
+# Same letters git uses for --name-status, so the section reads like git output.
+_STATUS_LETTERS = {"add": "A", "delete": "D", "modify": "M", "rename": "R", "copy": "C"}
+
+
+def _changed_files_section(result: SemanticDiffResult) -> list[str]:
+    """Render every changed file as ``<status> <path>``.
+
+    Covers all files git reported, including ones no symbols were extracted
+    from (binary, or an extension outside ``--include``), so the list matches
+    ``git diff --name-status``.
 
     Args:
-        lines: 1-based line numbers.
+        result: Completed diff from :func:`semantic_diff`.
 
     Returns:
-        String like ``"12, 13, 17"``.
+        Markdown lines, or ``[]`` when nothing changed.
     """
-    return ", ".join(str(ln) for ln in lines)
+    if not result.files:
+        return []
+    lines = ["Changed files", "=============", ""]
+    for f in sorted(result.files, key=lambda f: f.path):
+        lines.append(f"  {_STATUS_LETTERS.get(f.change_type, '?')} {f.path}")
+    lines.append("")
+    return lines
 
 
 def _kind_label(kind: str) -> str:
@@ -88,7 +102,7 @@ def _by_kind_section(entries: list[tuple[str, Any]], marker: str) -> list[str]:
 
     Args:
         entries: Cleaned ``(path, symbol)`` pairs.
-        marker: Bullet prefix (``+`` added, ``-`` removed).
+        marker: Bullet prefix (``+`` added, ``-`` removed, ``~`` modified).
 
     Returns:
         Markdown lines. Names only — the Vim report resolves file and line from
@@ -110,8 +124,9 @@ def _by_kind_section(entries: list[tuple[str, Any]], marker: str) -> list[str]:
 def render_markdown(result: SemanticDiffResult) -> str:
     """Render a semantic diff as human-readable Markdown.
 
-    Produces sections for added, removed, and modified symbols plus file-scope
-    line changes. Intended for terminal display and ``:read !`` in Vim.
+    Lists the changed files, then added, removed, and modified symbols grouped
+    by kind. Symbols are printed by name alone: the Vim report resolves file
+    and line from the JSON result, so paths would only add noise.
 
     Args:
         result: Completed diff from :func:`semantic_diff`.
@@ -128,10 +143,9 @@ def render_markdown(result: SemanticDiffResult) -> str:
     # Flatten per-file symbol lists into global sections grouped by change type.
     added = _clean([(f.path, s) for f in result.files for s in f.added_symbols])
     removed = _clean([(f.path, s) for f in result.files for s in f.removed_symbols])
-    modified = [(f.path, s) for f in result.files for s in f.modified_symbols]
-    file_scope = [
-        (f.path, f.file_scope_changes) for f in result.files if f.file_scope_changes.added_lines or f.file_scope_changes.deleted_lines
-    ]
+    modified = _clean([(f.path, s) for f in result.files for s in f.modified_symbols])
+
+    lines.extend(_changed_files_section(result))
 
     if added:
         lines.append("Added symbols")
@@ -149,35 +163,9 @@ def render_markdown(result: SemanticDiffResult) -> str:
         lines.append("Modified symbols")
         lines.append("----------------")
         lines.append("")
-        # Grouped by file rather than by kind: the same namespace is typically
-        # modified in many files, and the path keeps each entry jumpable.
-        by_file: dict[str, list[Any]] = {}
-        for path, sym in modified:
-            by_file.setdefault(path, []).append(sym)
-        for path in sorted(by_file):
-            entries = _clean([(path, sym) for sym in by_file[path]])
-            if not entries:
-                continue
-            lines.append(path)
-            lines.append("")
-            for _path, sym in entries:
-                lines.append(f"  ~ {sym.kind} {sym.qualified_name}")
-            lines.append("")
+        lines.extend(_by_kind_section(modified, "~"))
 
-    if file_scope:
-        lines.append("File-scope changes")
-        lines.append("------------------")
-        lines.append("")
-        for path, changes in file_scope:
-            lines.append(path)
-            lines.append("")
-            if changes.added_lines:
-                lines.append(f"* added lines: {_format_lines(changes.added_lines)}")
-            if changes.deleted_lines:
-                lines.append(f"* deleted lines: {_format_lines(changes.deleted_lines)}")
-            lines.append("")
-
-    if not added and not removed and not modified and not file_scope:
+    if not added and not removed and not modified:
         lines.append("No semantic changes detected in analyzed files.")
         lines.append("")
 

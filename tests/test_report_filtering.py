@@ -172,7 +172,37 @@ def test_markdown_removed_and_modified_show_names_only():
     )
 
     assert "- ImFusion::Robotics::Base::cloneTyped" in out
-    assert "~ function ImFusion::Robotics::RobotControl::update" in out
+    # Modified symbols are grouped by kind like the others, with no kind prefix
+    # on the bullet and no per-file heading.
+    assert "~ ImFusion::Robotics::RobotControl::update" in out
+    assert "~ function " not in out
+    assert "src/RobotControl.cpp\n\n  ~" not in out
     # The verbose per-symbol detail is gone.
     for noise in ("range:", "changed new lines:", "changed old lines:", "file:"):
         assert noise not in out
+
+
+def test_markdown_lists_changed_files_before_the_symbol_sections():
+    """A git --name-status style list, so deleted files are visible too."""
+    files = [
+        _file("src/kept.cpp"),
+        _file("src/gone.cpp"),
+        _file("src/new.cpp"),
+    ]
+    files[1].change_type = "delete"
+    files[2].change_type = "add"
+    out = render_markdown(_result(files))
+
+    assert "  D src/gone.cpp" in out
+    assert "  A src/new.cpp" in out
+    assert out.index("Changed files") < out.index("src/kept.cpp")
+
+
+def test_markdown_has_no_file_scope_section():
+    """File-scope line noise is not reported any more."""
+    f = _file("src/a.cpp")
+    f.file_scope_changes = FileScopeChanges(added_lines=[5, 6], deleted_lines=[9])
+    out = render_markdown(_result([f]))
+
+    assert "File-scope changes" not in out
+    assert "added lines:" not in out
