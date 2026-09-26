@@ -19,6 +19,7 @@ from semantic_branch_diff.pydriller_adapter import enrich_modified_symbol
 from semantic_branch_diff.symbols import (
     Symbol,
     best_enclosing_symbol,
+    is_reportable,
 )
 
 logger = logging.getLogger(__name__)

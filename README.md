@@ -2,24 +2,20 @@
 
 [![CI](https://github.com/rafaelrojasmiliani/semantic-ctags-diff/actions/workflows/ci.yml/badge.svg)](https://github.com/rafaelrojasmiliani/semantic-ctags-diff/actions/workflows/ci.yml)
 
-Ctags-powered **semantic diffs** for code review: symbols added, removed, and
-modified — not just changed line numbers. Works with **branches** (merge-request
-style), **commits**, or **directory snapshots** (no Git required).
+
+
+Ctags-based **semantic diffs** shows: symbols added, removed, and modified
+
 
 ## How it works: ctags line ranges
 
-The semantic diff is **not** an AST diff. It is built on two layers:
+The semantic-ctags-diff is **not** an AST-based diff (like difftastic).
+It is built on two layers:
 
 1. **Git** reports which files and line numbers changed between two refs.
-2. **ctags** reports each symbol’s **start line**, **end line** (when available),
-   **kind** (function, class, method, …), and **name/scope**.
+2. **ctags** reports each symbol’s **start line**, **end line** (when available),**kind** (function, class, method, …), and **name/scope**.
 
-Each changed line is mapped to the **innermost enclosing symbol** (a method beats
-its class; a class beats its namespace). Symbols are then classified as added,
-removed, modified, or file-scope (lines outside any tag range).
-
-This uses a **classic ctags tags file** (`-f tags` + `python-ctags3`). Ctags JSON
-output is **not** used or required.
+This uses a **classic ctags tags file** (`-f tags` + `python-ctags3`). Ctags JSON output is **not** used or required.
 
 ### Example
 
@@ -64,9 +60,8 @@ Functions:
   + ImFusion::Robotics::RobotController::isReady
 ```
 
-If you edit line 13 inside `configure()`, Git sees one changed line; ctags knows
-that line 13 ∈ `configure` (range 12–15), so the report says **modified function
-`configure`**, not merely “line 13 changed”.
+If you edit line 13 inside `configure()`, Git sees one changed line.
+At the same time, ctags knows that line 13 is inside the function `configure`, so the report says **modified function `configure`**, not merely “line 13 changed”.
 
 Try it:
 
