@@ -1,0 +1,34 @@
+# Align with ruff / .editorconfig. ALE runs pylint without --rcfile otherwise
+# and uses defaults (79-char lines, broad-except warnings, etc.).
+
+[MASTER]
+ignore=.git,.venv,.pytest_cache
+extension-pkg-allow-list=
+
+[FORMAT]
+max-line-length=140
+
+[MESSAGES CONTROL]
+# CLI and adapters intentionally catch Exception at trust boundaries.
+# import-outside-toplevel: lazy imports break navigation <-> diff_engine cycle.
+disable=
+    broad-except,
+    import-outside-toplevel,
+    missing-module-docstring,
+    missing-class-docstring,
+    missing-function-docstring
+
+[DESIGN]
+# Symbol / adapter types are intentionally wide; pylint defaults (7 attrs, 6
+# returns) are noise for this codebase.
+max-args=12
+max-locals=40
+max-branches=25
+max-statements=80
+max-attributes=15
+max-returns=20
+max-bool-expr=7
+
+[REPORTS]
+output-format=text
+reports=no
