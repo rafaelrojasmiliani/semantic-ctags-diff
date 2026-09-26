@@ -43,7 +43,7 @@ def run_git(repo: str | Path, *args: str, check: bool = True) -> str:
     """
     cmd = ["git", "-C", str(repo), *args]
     logger.debug("running: %s", " ".join(cmd))
-    proc = subprocess.run(cmd, capture_output=True, text=True)
+    proc = subprocess.run(cmd, capture_output=True, text=True, check=False)
     if check and proc.returncode != 0:
         stderr = proc.stderr.strip()
         raise GitError(stderr or f"git command failed: {' '.join(cmd)}")
@@ -134,6 +134,7 @@ def show_file_at_ref(repo: str | Path, ref: str, path: str) -> str | None:
         ["git", "-C", str(repo), "show", f"{ref}:{path}"],
         capture_output=True,
         text=True,
+        check=False,
     )
     if proc.returncode != 0:
         return None

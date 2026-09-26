@@ -56,10 +56,14 @@ def build_parser() -> argparse.ArgumentParser:
         description="Semantic diff using ctags (branches, commits, or directory snapshots)",
     )
     parser.add_argument("--repo", help="Local Git repository path (Git modes)")
-    parser.add_argument("--base", default="main", help="Base branch/ref (MR mode)")
-    parser.add_argument("--head", default="HEAD", help="Head branch/ref (MR mode)")
-    parser.add_argument("--from", dest="from_ref", metavar="REF", help="From commit/ref (direct mode)")
-    parser.add_argument("--to", dest="to_ref", metavar="REF", help="To commit/ref (direct mode)")
+    parser.add_argument("--base", default="main",
+                        help="Base branch/ref (MR mode)")
+    parser.add_argument("--head", default="HEAD",
+                        help="Head branch/ref (MR mode)")
+    parser.add_argument("--from", dest="from_ref",
+                        metavar="REF", help="From commit/ref (direct mode)")
+    parser.add_argument("--to", dest="to_ref", metavar="REF",
+                        help="To commit/ref (direct mode)")
     parser.add_argument(
         "--no-merge-base",
         action="store_true",
@@ -74,7 +78,8 @@ def build_parser() -> argparse.ArgumentParser:
         help="Output format",
     )
     parser.add_argument("--out", help="Optional output file path")
-    parser.add_argument("--ctags", default="ctags", help="ctags executable path")
+    parser.add_argument("--ctags", default="ctags",
+                        help="ctags executable path")
     parser.add_argument(
         "--include",
         default=",".join(DEFAULT_EXTENSIONS),
@@ -96,7 +101,8 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Attach structural excerpts via difftastic (placeholder)",
     )
-    parser.add_argument("--debug", action="store_true", help="Debug logging to stderr")
+    parser.add_argument("--debug", action="store_true",
+                        help="Debug logging to stderr")
     parser.add_argument(
         "--path",
         action="append",
@@ -108,8 +114,10 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Resolve symbol at --file/--line (no branch diff; JSON to stdout)",
     )
-    parser.add_argument("--file", metavar="PATH", help="Source file for --symbol-at")
-    parser.add_argument("--line", type=int, metavar="N", help="1-based line for --symbol-at")
+    parser.add_argument("--file", metavar="PATH",
+                        help="Source file for --symbol-at")
+    parser.add_argument("--line", type=int, metavar="N",
+                        help="1-based line for --symbol-at")
     parser.add_argument(
         "--kind",
         default="",
@@ -122,7 +130,8 @@ def _validate_args(args: argparse.Namespace) -> None:
     """Ensure the user passed a valid combination of mode flags."""
     if args.symbol_at or (args.file is not None and args.line is not None):
         if not args.file or args.line is None or args.line < 1:
-            raise ValueError("symbol-at mode requires --file PATH and --line N (N >= 1)")
+            raise ValueError(
+                "symbol-at mode requires --file PATH and --line N (N >= 1)")
         return
 
     snapshot = bool(args.old_dir or args.new_dir)
@@ -131,13 +140,16 @@ def _validate_args(args: argparse.Namespace) -> None:
 
     if snapshot:
         if not args.old_dir or not args.new_dir:
-            raise ValueError("snapshot mode requires both --old-dir and --new-dir")
+            raise ValueError(
+                "snapshot mode requires both --old-dir and --new-dir")
         if git_mr or git_direct:
-            raise ValueError("use either snapshot mode (--old-dir/--new-dir) or Git mode (--repo), not both")
+            raise ValueError(
+                "use either snapshot mode (--old-dir/--new-dir) or Git mode (--repo), not both")
         return
 
     if not args.repo:
-        raise ValueError("Git mode requires --repo, or use --old-dir and --new-dir for snapshots")
+        raise ValueError(
+            "Git mode requires --repo, or use --old-dir and --new-dir for snapshots")
 
     if git_direct and (args.from_ref is None or args.to_ref is None):
         raise ValueError("direct Git mode requires both --from and --to")
@@ -207,7 +219,8 @@ def main(argv: list[str] | None = None) -> int:
         print(str(exc), file=sys.stderr)
         return 1
 
-    output = render_json(result) if args.format == "json" else render_markdown(result)
+    output = render_json(
+        result) if args.format == "json" else render_markdown(result)
 
     if args.out:
         Path(args.out).write_text(output, encoding="utf-8")

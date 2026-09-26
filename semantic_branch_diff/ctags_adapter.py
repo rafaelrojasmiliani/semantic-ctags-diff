@@ -105,7 +105,12 @@ def _ctags_flavor(executable: str) -> str:
     Returns:
         ``"universal"`` or ``"exuberant"``.
     """
-    proc = subprocess.run([executable, "--version"], capture_output=True, text=True)
+    proc = subprocess.run(
+        [executable, "--version"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
     text = (proc.stdout + proc.stderr).lower()
     if "universal ctags" in text or "ctags-go" in text:
         return "universal"
@@ -167,11 +172,11 @@ def _infer_end_line(source: str, start_line: int, kind: str) -> int:
         started = False
         for idx in range(start_line - 1, len(lines)):
             line = lines[idx]
-            for ch in line:
-                if ch == "{":
+            for char in line:
+                if char == "{":
                     depth += 1
                     started = True
-                elif ch == "}":
+                elif char == "}":
                     depth -= 1
                     if started and depth == 0:
                         return idx + 1
@@ -221,8 +226,7 @@ def _read_tags_file(tags_path: Path, source_path: str, source_content: str) -> l
 
         kind = effective_kind(raw_kind, name, scope, pattern)
         end_line = int(end_raw) if end_raw.isdigit() else _infer_end_line(source_content, line_no, kind)
-        if end_line < line_no:
-            end_line = line_no
+        end_line = max(end_line, line_no)
 
         key, short_name, norm_scope = symbol_key_from_tag_fields(
             name=name,
@@ -295,7 +299,7 @@ def generate_symbols(
         # Write snapshot with correct extension so ctags picks the C++ parser.
         source_file.write_text(source_content, encoding="utf-8")
         cmd = _ctags_command(executable, tags_file, source_file)
-        proc = subprocess.run(cmd, capture_output=True, text=True)
+        proc = subprocess.run(cmd, capture_output=True, text=True, check=False)
         if proc.returncode != 0:
             stderr = proc.stderr.strip()
             raise CtagsError(stderr or f"ctags failed: {' '.join(cmd)}")

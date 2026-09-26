@@ -19,7 +19,6 @@ from semantic_branch_diff.pydriller_adapter import enrich_modified_symbol
 from semantic_branch_diff.symbols import (
     Symbol,
     best_enclosing_symbol,
-    is_reportable,
 )
 
 logger = logging.getLogger(__name__)
@@ -217,8 +216,8 @@ def _path_matches_filter(path: str, filters: tuple[str, ...]) -> bool:
         return True
     norm = path.replace("\\", "/").lstrip("./")
     for filt in filters:
-        f = filt.replace("\\", "/").lstrip("./")
-        if norm == f or norm.endswith("/" + f):
+        filt_norm = filt.replace("\\", "/").lstrip("./")
+        if norm == filt_norm or norm.endswith("/" + filt_norm):
             return True
     return False
 
