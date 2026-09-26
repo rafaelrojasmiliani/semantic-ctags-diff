@@ -2,20 +2,30 @@
 
 [![CI](https://github.com/rafaelrojasmiliani/semantic-ctags-diff/actions/workflows/ci.yml/badge.svg)](https://github.com/rafaelrojasmiliani/semantic-ctags-diff/actions/workflows/ci.yml)
 
+Ctags-based **semantic diffs** for C/C++: symbols added, removed, and modified
+between Git refs or directory snapshots.
 
+| | |
+|-|-|
+| **PyPI / import name** | `semantic-branch-diff` / `semantic_branch_diff` |
+| **GitHub repo** | [semantic-ctags-diff](https://github.com/rafaelrojasmiliani/semantic-ctags-diff) |
+| **CLI** | `python3 -m semantic_branch_diff.cli` (always); `semantic-branch-diff` after `pip install -e .` |
+| **Python** | ≥ 3.10 |
+| **Deps** | [PyDriller](https://github.com/ishepard/pydriller), [python-ctags3](https://pypi.org/project/python-ctags3/), [Universal Ctags](https://github.com/universal-ctags/ctags) (or Exuberant) |
 
-Ctags-based **semantic diffs** shows: symbols added, removed, and modified
+This library is **not** an AST diff (unlike difftastic). It maps Git line changes
+onto ctags symbol ranges.
 
-
-## How it works: ctags line ranges
-
-The semantic-ctags-diff is **not** an AST-based diff (like difftastic).
-It is built on two layers:
+## How it works
 
 1. **Git** reports which files and line numbers changed between two refs.
-2. **ctags** reports each symbol’s **start line**, **end line** (when available),**kind** (function, class, method, …), and **name/scope**.
+2. **ctags** reports each symbol’s **start line**, **end line** (when available),
+   **kind** (function, class, method, …), and **name/scope**.
+3. The engine classifies symbols as added / removed / modified when changed lines
+   fall inside those ranges.
 
-This uses a **classic ctags tags file** (`-f tags` + `python-ctags3`). Ctags JSON output is **not** used or required.
+Uses a **classic ctags tags file** (`-f tags` + `python-ctags3`). Ctags JSON
+output is **not** used or required.
 
 ### Example
 
@@ -47,8 +57,7 @@ void RobotController::configure(double x) {  // ctags: lines 12–15
 }
 ```
 
-Running a snapshot diff reports **added symbols** by name, not just “lines 6–7
-changed”:
+A snapshot diff reports **added symbols** by name, not just “lines 6–7 changed”:
 
 ```text
 Added symbols
@@ -60,17 +69,9 @@ Functions:
   + ImFusion::Robotics::RobotController::isReady
 ```
 
-If you edit line 13 inside `configure()`, Git sees one changed line.
-At the same time, ctags knows that line 13 is inside the function `configure`, so the report says **modified function `configure`**, not merely “line 13 changed”.
-
-Try it:
-
-```bash
-semantic-branch-diff \
-  --old-dir examples/01_added_methods/old \
-  --new-dir examples/01_added_methods/new \
-  --format markdown
-```
+If you edit line 13 inside `configure()`, Git sees one changed line. Ctags knows
+that line is inside `configure`, so the report says **modified function
+`configure`**, not merely “line 13 changed”.
 
 **Limits:** regions ctags cannot tag (some macros, templates, unsupported
 extensions) appear as **file-scope** changes or are skipped. Exuberant ctags may
@@ -78,53 +79,114 @@ omit `end` lines; the tool estimates function ends from `{`/`}`.
 
 ## Install
 
+### Standalone (editable + console script)
+
 ```bash
 pip install -e ".[dev]"
 ```
 
-Requires [Universal Ctags](https://github.com/universal-ctags/ctags) (or
-Exuberant Ctags with reduced C++ metadata).
+Then `semantic-branch-diff` is on `PATH`.
+
+### Dependencies only (Vim plugin / no package install)
+
+The
+[vim-semantic-ctags-diff](https://github.com/rafaelrojasmiliani/ctags-difftastic-semantic-diff-vim)
+plugin vendors this tree and runs it with `PYTHONPATH` — it does **not**
+`pip install` this package. You only need the runtime libraries:
+
+```bash
+pip install 'pydriller>=2.0' 'python-ctags3>=1.5'
+```
+
+```bash
+PYTHONPATH=/path/to/semantic-ctags-diff \
+  python3 -m semantic_branch_diff.cli --repo . --base main --head HEAD --format markdown
+```
 
 ## Comparison modes
+
+All examples below assume you are in this repository root. The module form
+works without installing the package on `PATH`:
+
+```bash
+python3 -m semantic_branch_diff.cli --help
+```
+
+After `pip install -e .`, you can substitute `semantic-branch-diff` for
+`python3 -m semantic_branch_diff.cli`.
 
 ### Merge request / branch (default)
 
 Compares `merge-base(base, head)..head` — same as a typical PR:
 
 ```bash
-semantic-branch-diff --repo . --base main --head feature --format markdown
+python3 -m semantic_branch_diff.cli --repo . --base main --head feature --format markdown
 ```
 
-Limit to one file (faster on large repos; repeatable):
+Skip merge-base (direct `base..head`):
 
 ```bash
-semantic-branch-diff --repo . --base main --head HEAD --path src/foo.cpp --format markdown
+python3 -m semantic_branch_diff.cli --repo . --base main --head feature --no-merge-base --format markdown
+```
+
+Limit to one or more repo-relative files (faster on large repos; repeatable):
+
+```bash
+python3 -m semantic_branch_diff.cli --repo . --base main --head HEAD \
+  --path src/foo.cpp --path include/foo.hpp --format markdown
 ```
 
 ### Commit to commit
 
 ```bash
-semantic-branch-diff --repo . --from abc1234 --to def5678 --format markdown
+python3 -m semantic_branch_diff.cli --repo . --from abc1234 --to def5678 --format markdown
 ```
 
 ### Directory snapshots (no Git)
 
-Compare `old/` and `new/` folder trees — ideal for examples and local experiments:
-
 ```bash
-semantic-branch-diff \
+python3 -m semantic_branch_diff.cli \
   --old-dir examples/01_added_methods/old \
   --new-dir examples/01_added_methods/new \
   --format markdown
 ```
+
+## CLI reference
+
+| Flag | Purpose |
+|------|---------|
+| `--repo PATH` | Git repository (required for Git modes) |
+| `--base` / `--head` | MR-style refs (defaults: `main`, `HEAD`) |
+| `--from` / `--to` | Direct commit-to-commit refs |
+| `--no-merge-base` | With `--base`/`--head`, compare refs directly |
+| `--old-dir` / `--new-dir` | Snapshot mode (no Git) |
+| `--path FILE` | Limit Git analysis to a repo-relative path (repeatable) |
+| `--format {json,markdown}` | Output format (**default: `json`**) |
+| `--out PATH` | Write report to a file instead of stdout |
+| `--include EXT,...` | Extensions to analyze (default: `.c,.cc,.cpp,.cxx,.h,.hh,.hpp,.hxx`) |
+| `--ctags PATH` | Ctags executable (default: `ctags`) |
+| `--no-pydriller-methods` | Disable PyDriller/Lizard method enrichment |
+| `--debug` | Debug logging to **stderr** (stdout stays the report) |
+| `--with-difftastic` | Placeholder only — not implemented |
+| `--symbol-at --file PATH --line N` | Resolve enclosing symbol (no branch diff); optional `--kind` |
+
+Debug logs always go to **stderr** so stdout stays machine-readable.
 
 ## Python API
 
 ```python
 from semantic_branch_diff import semantic_diff
 
-# Branch / MR
+# Branch / MR (merge-base..head)
 result = semantic_diff(repo="/path/to/repo", base="main", head="HEAD")
+
+# Single file
+result = semantic_diff(
+    repo="/path/to/repo",
+    base="main",
+    head="HEAD",
+    paths=("src/RobotController.cpp",),
+)
 
 # Commits
 result = semantic_diff(repo="/path/to/repo", from_ref="HEAD~1", to_ref="HEAD")
@@ -137,76 +199,14 @@ result = semantic_diff(
 print(result.to_dict())
 ```
 
-## Examples
+## Symbol at cursor (Flog / navigation)
 
-| Example | Description |
-|---------|-------------|
-| [01_added_methods](examples/01_added_methods/) | Class with constructor only → header gains **3 methods**, new `.cpp` with **2 bodies** |
-
-### Example 01 — Added methods
-
-**Old** (`examples/01_added_methods/old/`):
-
-- `include/robotics/RobotController.h` — class + constructor declaration only
-
-**New** (`examples/01_added_methods/new/`):
-
-- `include/robotics/RobotController.h` — adds `reset()`, `configure(double)`, inline `isReady()`
-- `src/RobotController.cpp` — **new file** with constructor + `reset` / `configure` definitions
-
-Run the snapshot diff:
+Resolve the enclosing ctags symbol at a line — used by the Vim plugin’s
+`:FlogSymbol` / `:Flogsplit*` commands:
 
 ```bash
-semantic-branch-diff \
-  --old-dir examples/01_added_methods/old \
-  --new-dir examples/01_added_methods/new \
-  --no-pydriller-methods \
-  --format markdown
-```
-
-Or build a two-commit Git repo and diff `HEAD~1..HEAD`:
-
-```bash
-./examples/01_added_methods/run_example.sh
-```
-
-See [examples/01_added_methods/README.md](examples/01_added_methods/README.md) for
-expected output and file layout.
-
-## Vim (vim-semantic-ctags-diff plugin)
-
-When used from the Vim plugin, **no pip install of this package** is required.
-The plugin runs:
-
-```bash
-PYTHONPATH=submodules/semantic-ctags-diff python3 -m semantic_branch_diff.cli ...
-```
-
-You still need **PyDriller** and **python-ctags3** importable by that Python.
-
-```vim
-:read !semantic-branch-diff --repo . --base main --head HEAD --format markdown
-```
-
-Debug logs go to **stderr**; stdout is only the report.
-
-### Difftastic is optional
-
-The `--with-difftastic` flag is a placeholder and difftastic is **not** required
-by this library — the semantic diff is fully computed from ctags + Git. If
-`difft` is absent, everything still works.
-
-Difftastic-based file diffs live in the Vim plugin instead (`:Gdifftastic` /
-`:Gvdifftastic`), which run `difft` as git's external diff. That feature needs
-only `git` + `difft`, independent of this Python module.
-
-### Symbol at cursor (Flog integration)
-
-Resolve the enclosing ctags symbol at a line — used by vim-semantic-ctags-diff
-`:Flogsplit*` commands. Uses **classic ctags tags output**, not ctags JSON:
-
-```bash
-semantic-branch-diff --symbol-at --file src/foo.cpp --line 42 --kind function
+python3 -m semantic_branch_diff.cli \
+  --symbol-at --file src/foo.cpp --line 42 --kind function
 ```
 
 JSON includes `flog_limit` (`start,end:path`), `label`, and `symbol`.
@@ -214,17 +214,68 @@ JSON includes `flog_limit` (`start,end:path`), `label`, and `symbol`.
 Branch-diff JSON also includes a top-level `navigation` list (modified symbols
 with `flog_limit`) for `:SemanticCtagsDiffFlogSymbol`.
 
-### Python navigation API
-
 ```python
 from semantic_branch_diff.navigation import (
     collect_navigation_choices,
     flog_line_limit,
+    symbol_at_path,
     symbol_at_source,
 )
 
 limit = flog_line_limit("src/foo.cpp", 10, 50)  # "10,50:src/foo.cpp"
 ```
 
-Ctags requirements: [Universal Ctags](https://github.com/universal-ctags/ctags)
-or Exuberant Ctags. **JSON output format is not used or required.**
+## Examples
+
+| Example | Description |
+|---------|-------------|
+| [01_added_methods](examples/01_added_methods/) | Class with constructor only → header gains **3 methods**, new `.cpp` with **2 bodies** |
+
+```bash
+# Snapshot (no Git)
+python3 -m semantic_branch_diff.cli \
+  --old-dir examples/01_added_methods/old \
+  --new-dir examples/01_added_methods/new \
+  --no-pydriller-methods \
+  --format markdown
+
+# Or build a two-commit temp repo and diff HEAD~1..HEAD
+./examples/01_added_methods/run_example.sh
+```
+
+See [examples/01_added_methods/README.md](examples/01_added_methods/README.md).
+
+## Vim plugin
+
+When vendored under `submodules/semantic-ctags-diff`, the Vim plugin runs:
+
+```bash
+PYTHONPATH=submodules/semantic-ctags-diff python3 -m semantic_branch_diff.cli ...
+```
+
+No editable install of this package is required — only **PyDriller** and
+**python-ctags3** must be importable.
+
+Plugin features that call this library:
+
+| Vim command | Python |
+|-------------|--------|
+| `:SemanticCtagsDiff [base] [head] [file]` | Branch diff (`--path` when scoped) |
+| `:SemanticCtagsDiffFile` | Branch diff for the current buffer path |
+| `:FlogSymbol` / `:Flogsplit*` | `--symbol-at --file --line` |
+
+### Difftastic is separate
+
+`--with-difftastic` is a **placeholder** and is unused. Structural file diffs live
+in the Vim plugin (`:Gdifftastic` / `:Gvdifftastic`) and need only `git` + `difft`,
+independent of this Python module.
+
+## Tests
+
+```bash
+pip install -e ".[dev]"
+pytest -v
+```
+
+CI runs the same suite on every push/PR to `main`
+(see [`.github/workflows/ci.yml`](.github/workflows/ci.yml)).
