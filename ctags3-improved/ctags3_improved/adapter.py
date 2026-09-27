@@ -8,8 +8,9 @@ import subprocess
 import tempfile
 from pathlib import Path
 
-from ctags3_improved.model import FileIndex, Symbol, SymbolKey
-from ctags3_improved.normalize import effective_kind, symbol_key_from_tag_fields
+from ctags3_improved._raw_tag import _RawTag, _symbol_from_raw
+from ctags3_improved.model import FileIndex, Symbol
+from ctags3_improved.normalize import effective_kind
 from ctags3_improved.query import deduplicate_symbols, symbols_by_key
 
 logger = logging.getLogger(__name__)
@@ -132,53 +133,30 @@ def _read_tags_file(tags_path: Path, source_path: str, source_content: str) -> l
         name = _decode_field(entry, "name")
         if not name or name.startswith("!_"):
             continue
-        raw_kind = _decode_field(entry, "kind")
-        line_no = int(_decode_field(entry, "lineNumber") or "0")
-        end_raw = _decode_field(entry, "end")
-        pattern = _decode_field(entry, "pattern")
-        scope = _decode_field(entry, "scope")
-        class_field = (
-            _decode_field(entry, "class")
-            or _decode_field(entry, "struct")
-            or _decode_field(entry, "union")
-        )
-        namespace_field = _decode_field(entry, "namespace")
-        enum_field = _decode_field(entry, "enum")
-        interface_field = _decode_field(entry, "interface")
-        file_scope_raw = _decode_field(entry, "fileScope")
-        file_scope = file_scope_raw in {"1", "true", "True"}
-
-        kind = effective_kind(raw_kind, name, scope, pattern)
-        end_line = int(end_raw) if end_raw.isdigit() else _infer_end_line(source_content, line_no, kind)
-        end_line = max(end_line, line_no)
-
-        key, short_name, norm_scope = symbol_key_from_tag_fields(
+        tag = _RawTag(
             name=name,
-            raw_kind=raw_kind,
-            scope=scope,
-            class_field=class_field,
-            namespace_field=namespace_field,
-            enum_field=enum_field,
-            interface_field=interface_field,
-            pattern=pattern,
-            _file_scope=file_scope,
+            raw_kind=_decode_field(entry, "kind"),
+            scope=_decode_field(entry, "scope"),
+            class_field=(
+                _decode_field(entry, "class")
+                or _decode_field(entry, "struct")
+                or _decode_field(entry, "union")
+            ),
+            namespace_field=_decode_field(entry, "namespace"),
+            enum_field=_decode_field(entry, "enum"),
+            interface_field=_decode_field(entry, "interface"),
+            pattern=_decode_field(entry, "pattern"),
+            line=int(_decode_field(entry, "lineNumber") or "0"),
+            end_raw=_decode_field(entry, "end"),
+            file_scope=_decode_field(entry, "fileScope") in {"1", "true", "True"},
         )
-        symbols.append(
-            Symbol(
-                key=key,
-                name=short_name,
-                qualified_name=key.qualified_name,
-                kind=key.kind,
-                raw_kind=raw_kind,
-                scope=norm_scope,
-                path=source_path,
-                start_line=line_no,
-                end_line=end_line,
-                file_scope=file_scope,
-                pattern=pattern or None,
-                signature=key.signature,
-            )
+        kind = effective_kind(tag.raw_kind, tag.name, tag.scope, tag.pattern)
+        end_line = (
+            int(tag.end_raw)
+            if tag.end_raw.isdigit()
+            else _infer_end_line(source_content, tag.line, kind)
         )
+        symbols.append(_symbol_from_raw(tag, path=source_path, end_line=end_line))
     return deduplicate_symbols(symbols)
 
 
@@ -243,7 +221,6 @@ __all__ = [
     "CtagsError",
     "FileIndex",
     "Symbol",
-    "SymbolKey",
     "generate_symbols",
     "index_source",
     "require_ctags_executable",

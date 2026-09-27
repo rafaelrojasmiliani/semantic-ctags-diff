@@ -11,6 +11,7 @@ from ctags3_improved.adapter import (
     require_ctags_executable,
     require_ctags_library,
 )
+from ctags3_improved.change import SymbolChange, symbol_change
 from ctags3_improved.model import (
     CLASS_KINDS,
     FUNCTION_KINDS,
@@ -27,7 +28,6 @@ from ctags3_improved.normalize import (
     is_anonymous,
     is_reportable,
     normalize_scope_parts,
-    symbol_key_from_tag_fields,
 )
 from ctags3_improved.query import (
     best_enclosing_symbol,
@@ -45,6 +45,7 @@ __all__ = [
     "MEMBER_KINDS",
     "NOISE_KINDS",
     "Symbol",
+    "SymbolChange",
     "SymbolKey",
     "best_enclosing_symbol",
     "build_qualified_name",
@@ -58,6 +59,6 @@ __all__ = [
     "normalize_scope_parts",
     "require_ctags_executable",
     "require_ctags_library",
-    "symbol_key_from_tag_fields",
+    "symbol_change",
     "symbols_by_key",
 ]

@@ -107,6 +107,33 @@ class Symbol:
         """Check whether ``line`` falls inside this symbol's range."""
         return self.start_line <= line <= self.end_line
 
+    def same_identity(self, other: Symbol) -> bool:
+        """True when both symbols share the same :class:`SymbolKey`."""
+        return self.key == other.key
+
+    def contains_symbol(self, other: Symbol) -> bool:
+        """True when ``other``'s range is nested in this one (same path)."""
+        if self.path != other.path:
+            return False
+        return self.start_line <= other.start_line and other.end_line <= self.end_line
+
+    def diff_against(
+        self,
+        new: Symbol,
+        *,
+        deleted_lines: list[int],
+        added_lines: list[int],
+    ):
+        """Compare this (old) symbol to ``new``; see :func:`ctags3_improved.change.symbol_change`."""
+        from ctags3_improved.change import symbol_change
+
+        return symbol_change(
+            self,
+            new,
+            deleted_lines=deleted_lines,
+            added_lines=added_lines,
+        )
+
 
 @dataclass
 class FileIndex:

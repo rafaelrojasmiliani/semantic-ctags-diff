@@ -1,3 +1,9 @@
 .*.sw?
 .py[cod]
 __pycache__
+tags
+.sw?
+GPATH
+GRTAGS
+GTAGS
+tags

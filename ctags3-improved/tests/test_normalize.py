@@ -8,6 +8,7 @@ from ctags3_improved import (
     deduplicate_symbols,
     effective_kind,
 )
+from ctags3_improved._raw_tag import _RawTag, _key_from_raw
 
 
 def test_effective_kind_empty_becomes_function_for_scoped_method_pattern():
@@ -58,6 +59,32 @@ def test_deduplicate_prefers_qualified_symbol():
     names = [s.qualified_name for s in result]
     assert "isApprox" not in names
     assert "A::B::Foo::isApprox" in names
+
+
+def test_member_of_a_class_stays_a_member():
+    key, _, _ = _key_from_raw(
+        _RawTag(
+            name="value",
+            raw_kind="m",
+            scope="ImFusion::Robotics::Params",
+            class_field="ImFusion::Robotics::Params",
+            pattern="/^  double value;$/",
+        )
+    )
+    assert key.kind == "member"
+
+
+def test_member_of_a_namespace_is_really_a_variable():
+    key, _, _ = _key_from_raw(
+        _RawTag(
+            name="value",
+            raw_kind="m",
+            scope="ImFusion::Robotics",
+            namespace_field="ImFusion::Robotics",
+            pattern="/^  double value;$/",
+        )
+    )
+    assert key.kind == "variable"
 
 
 def test_best_enclosing_symbol_prefers_method_over_namespace():

@@ -13,13 +13,12 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
 
+from ctags3_improved import Symbol, SymbolChange, symbol_change
+
 from semantic_branch_diff import git_utils
 from semantic_branch_diff.ctags_adapter import generate_symbols, symbols_by_key
 from semantic_branch_diff.pydriller_adapter import enrich_modified_symbol
-from semantic_branch_diff.symbols import (
-    Symbol,
-    best_enclosing_symbol,
-)
+from semantic_branch_diff.symbols import best_enclosing_symbol
 
 logger = logging.getLogger(__name__)
 
@@ -37,73 +36,42 @@ EXTENSION_LANGUAGE = {
 }
 
 
-@dataclass
-class ModifiedSymbolResult:
-    """A symbol present in both revisions whose body or signature changed.
+def _symbol_to_dict(sym: Symbol, *, classification: str) -> dict[str, Any]:
+    """Serialize a :class:`Symbol` for JSON (added/removed), Vim-compatible."""
+    from semantic_branch_diff.navigation import enrich_symbol_dict
 
-    Attributes:
-        kind: Normalized symbol kind.
-        qualified_name: Full C++ name for reports.
-        name: Short name segment.
-        scope: Parent scope string.
-        file: Repo-relative path.
-        old_range: ``[start, end]`` line range at merge-base.
-        new_range: ``[start, end]`` line range at head.
-        changed_old_lines: Deleted lines intersecting ``old_range``.
-        changed_new_lines: Added lines intersecting ``new_range``.
-        classification: Always ``"modified"`` for this type.
-        pydriller: Optional Lizard metrics from enrichment.
-    """
-
-    kind: str
-    qualified_name: str
-    name: str
-    scope: str
-    file: str
-    old_range: list[int]
-    new_range: list[int]
-    changed_old_lines: list[int]
-    changed_new_lines: list[int]
-    classification: str = "modified"
-    pydriller: dict[str, Any] = field(default_factory=dict)
-
-    def to_dict(self) -> dict[str, Any]:
-        """Serialize to a JSON-friendly dict, omitting empty ``pydriller``."""
-        from semantic_branch_diff.navigation import enrich_symbol_dict
-
-        data = asdict(self)
-        if not data["pydriller"]:
-            del data["pydriller"]
-        return enrich_symbol_dict(data)
+    return enrich_symbol_dict(
+        {
+            "kind": sym.kind,
+            "qualified_name": sym.qualified_name,
+            "name": sym.name,
+            "scope": sym.scope,
+            "file": sym.path,
+            "range": [sym.start_line, sym.end_line],
+            "classification": classification,
+        }
+    )
 
 
-@dataclass
-class SymbolSummary:
-    """Compact symbol record for added or removed classifications.
+def _change_to_dict(change: SymbolChange) -> dict[str, Any]:
+    """Serialize a :class:`SymbolChange` for JSON (modified), Vim-compatible."""
+    from semantic_branch_diff.navigation import enrich_symbol_dict
 
-    Attributes:
-        kind: Normalized symbol kind.
-        qualified_name: Full name.
-        name: Short name.
-        scope: Parent scope.
-        file: Repo-relative path.
-        range: ``[start_line, end_line]`` in the relevant revision.
-        classification: ``"added"`` or ``"removed"``.
-    """
-
-    kind: str
-    qualified_name: str
-    name: str
-    scope: str
-    file: str
-    range: list[int]
-    classification: str
-
-    def to_dict(self) -> dict[str, Any]:
-        """Serialize to a JSON-friendly dict."""
-        from semantic_branch_diff.navigation import enrich_symbol_dict
-
-        return enrich_symbol_dict(asdict(self))
+    data: dict[str, Any] = {
+        "kind": change.kind,
+        "qualified_name": change.qualified_name,
+        "name": change.name,
+        "scope": change.scope,
+        "file": change.new.path,
+        "old_range": change.old_range,
+        "new_range": change.new_range,
+        "changed_old_lines": change.deleted_lines,
+        "changed_new_lines": change.added_lines,
+        "classification": "modified",
+    }
+    if change.pydriller:
+        data["pydriller"] = change.pydriller
+    return enrich_symbol_dict(data)
 
 
 @dataclass
@@ -136,7 +104,7 @@ class FileDiffResult:
         deleted_lines: All deleted line numbers from unified diff.
         added_symbols: Symbols only in head inventory.
         removed_symbols: Symbols only in base inventory.
-        modified_symbols: Symbols in both with intersecting changes.
+        modified_symbols: Paired old/new symbols with intersecting changes.
         file_scope_changes: Non-symbol line changes.
         skipped: True when file was not analyzed.
         skip_reason: Reason when skipped (``binary``, ``extension_not_included``).
@@ -148,15 +116,15 @@ class FileDiffResult:
     language: str
     added_lines: list[int]
     deleted_lines: list[int]
-    added_symbols: list[SymbolSummary]
-    removed_symbols: list[SymbolSummary]
-    modified_symbols: list[ModifiedSymbolResult]
+    added_symbols: list[Symbol]
+    removed_symbols: list[Symbol]
+    modified_symbols: list[SymbolChange]
     file_scope_changes: FileScopeChanges
     skipped: bool = False
     skip_reason: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
-        """Serialize to the stable JSON schema used by the CLI."""
+        """Serialize to the stable JSON schema used by the CLI / Vim."""
         return {
             "path": self.path,
             "old_path": self.old_path,
@@ -164,9 +132,9 @@ class FileDiffResult:
             "language": self.language,
             "added_lines": self.added_lines,
             "deleted_lines": self.deleted_lines,
-            "added_symbols": [s.to_dict() for s in self.added_symbols],
-            "removed_symbols": [s.to_dict() for s in self.removed_symbols],
-            "modified_symbols": [s.to_dict() for s in self.modified_symbols],
+            "added_symbols": [_symbol_to_dict(s, classification="added") for s in self.added_symbols],
+            "removed_symbols": [_symbol_to_dict(s, classification="removed") for s in self.removed_symbols],
+            "modified_symbols": [_change_to_dict(c) for c in self.modified_symbols],
             "file_scope_changes": self.file_scope_changes.to_dict(),
             **({"skipped": True, "skip_reason": self.skip_reason} if self.skipped else {}),
         }
@@ -245,61 +213,6 @@ def _language_for(path: str) -> str:
         Language string (``cpp``, ``c``, or ``unknown``).
     """
     return EXTENSION_LANGUAGE.get(Path(path).suffix.lower(), "unknown")
-
-
-def _symbol_summary(sym: Symbol, file_path: str, classification: str) -> SymbolSummary:
-    """Build a :class:`SymbolSummary` from a :class:`Symbol` for add/remove lists.
-
-    Args:
-        sym: Symbol from old or new inventory.
-        file_path: Repo-relative path for reports.
-        classification: ``"added"`` or ``"removed"``.
-
-    Returns:
-        Summary record for JSON/Markdown renderers.
-    """
-    start, end = sym.start_line, sym.end_line
-    return SymbolSummary(
-        kind=sym.kind,
-        qualified_name=sym.qualified_name,
-        name=sym.name,
-        scope=sym.scope,
-        file=file_path,
-        range=[start, end],
-        classification=classification,
-    )
-
-
-def _lines_in_range(lines: list[int], start: int, end: int) -> list[int]:
-    """Filter changed line numbers to those inside a symbol range.
-
-    Args:
-        lines: Added or deleted line numbers from unified diff.
-        start: Symbol start line (inclusive).
-        end: Symbol end line (inclusive).
-
-    Returns:
-        Sorted unique line numbers within ``[start, end]``.
-    """
-    return sorted({ln for ln in lines if start <= ln <= end})
-
-
-def _signature_changed(old_sym: Symbol, new_sym: Symbol) -> bool:
-    """Detect meaningful signature/pattern change between two symbol revisions.
-
-    Treats a symbol as modified even when line numbers are unchanged but the
-    ctags pattern (declaration shape) differs.
-
-    Args:
-        old_sym: Symbol at merge-base.
-        new_sym: Symbol at head.
-
-    Returns:
-        ``True`` when pattern or signature fields differ.
-    """
-    if old_sym.pattern and new_sym.pattern and old_sym.pattern != new_sym.pattern:
-        return True
-    return bool(old_sym.signature and new_sym.signature and old_sym.signature != new_sym.signature)
 
 
 def _collect_tree_files(root: Path, extensions: tuple[str, ...]) -> dict[str, Path]:
@@ -425,31 +338,22 @@ def analyze_file_pair(
     removed_keys = old_keys - new_keys
     common_keys = old_keys & new_keys
 
-    added_symbols = [_symbol_summary(new_by_key[k], display_path, "added") for k in sorted(added_keys, key=lambda x: x.qualified_name)]
-    removed_symbols = [
-        _symbol_summary(old_by_key[k], display_path, "removed") for k in sorted(removed_keys, key=lambda x: x.qualified_name)
-    ]
+    added_symbols = [new_by_key[k] for k in sorted(added_keys, key=lambda x: x.qualified_name)]
+    removed_symbols = [old_by_key[k] for k in sorted(removed_keys, key=lambda x: x.qualified_name)]
 
-    modified_symbols: list[ModifiedSymbolResult] = []
-
-    for line in added_lines:
-        sym = best_enclosing_symbol(new_symbols, line)
-        if sym is None or sym.key in added_keys:
-            continue
-
-    for line in deleted_lines:
-        sym = best_enclosing_symbol(old_symbols, line)
-        if sym is None or sym.key in removed_keys:
-            continue
-
+    modified_symbols: list[SymbolChange] = []
     for key in sorted(common_keys, key=lambda x: x.qualified_name):
         old_sym = old_by_key[key]
         new_sym = new_by_key[key]
-        changed_old = _lines_in_range(deleted_lines, old_sym.start_line, old_sym.end_line)
-        changed_new = _lines_in_range(added_lines, new_sym.start_line, new_sym.end_line)
-        if not changed_old and not changed_new and not _signature_changed(old_sym, new_sym):
+        change = symbol_change(
+            old_sym,
+            new_sym,
+            deleted_lines=deleted_lines,
+            added_lines=added_lines,
+        )
+        if change is None:
             continue
-        py_meta = enrich_modified_symbol(
+        change.pydriller = enrich_modified_symbol(
             _repo_path=repo_path,
             old_content=old_content,
             new_content=new_content,
@@ -457,20 +361,7 @@ def analyze_file_pair(
             qualified_name=new_sym.qualified_name,
             enabled=use_pydriller_methods,
         )
-        modified_symbols.append(
-            ModifiedSymbolResult(
-                kind=new_sym.kind,
-                qualified_name=new_sym.qualified_name,
-                name=new_sym.name,
-                scope=new_sym.scope,
-                file=display_path,
-                old_range=[old_sym.start_line, old_sym.end_line],
-                new_range=[new_sym.start_line, new_sym.end_line],
-                changed_old_lines=changed_old,
-                changed_new_lines=changed_new,
-                pydriller=py_meta,
-            )
-        )
+        modified_symbols.append(change)
 
     modified_old_ranges = {tuple(m.old_range) for m in modified_symbols}
     modified_new_ranges = {tuple(m.new_range) for m in modified_symbols}

@@ -1,8 +1,9 @@
 """Vim / Flog navigation helpers.
 
 Centralizes symbol picking, flog ``-limit=`` strings, and cursor-at-symbol
-resolution. Domain type is :class:`NavigationEntry`; ``to_dict()`` is only for
-the JSON / Vim wire boundary.
+resolution. Domain type is :class:`NavigationEntry`; it holds a ctags
+:class:`~ctags3_improved.model.Symbol` plus a classification.
+``to_dict()`` is only for the JSON / Vim wire boundary.
 """
 
 from __future__ import annotations
@@ -12,12 +13,13 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from ctags3_improved import Symbol, SymbolKey
+
 from semantic_branch_diff.ctags_adapter import generate_symbols
 from semantic_branch_diff.diff_engine import SemanticDiffResult
 from semantic_branch_diff.symbols import (
     CLASS_KINDS,
     FUNCTION_KINDS,
-    Symbol,
     best_enclosing_symbol,
     kind_priority,
 )
@@ -36,77 +38,71 @@ def symbol_label(kind: str, qualified_name: str) -> str:
     return f"{kind} {name}"
 
 
+def _symbol_from_wire_dict(record: dict[str, Any]) -> Symbol:
+    """Rebuild a minimal :class:`Symbol` from a JSON symbol summary dict."""
+    path = str(record.get("file", record.get("path", "")))
+    if "new_range" in record and len(record["new_range"]) >= 2:
+        start, end = int(record["new_range"][0]), int(record["new_range"][1])
+    elif "range" in record and len(record["range"]) >= 2:
+        start, end = int(record["range"][0]), int(record["range"][1])
+    else:
+        start = int(record.get("line", 1))
+        end = start
+    kind = str(record.get("kind", "symbol"))
+    qn = str(record.get("qualified_name", record.get("name", "")))
+    name = str(record.get("name", qn.split("::")[-1] if qn else ""))
+    return Symbol(
+        key=SymbolKey(kind=kind, qualified_name=qn),
+        name=name,
+        qualified_name=qn,
+        kind=kind,
+        raw_kind=kind,
+        scope=str(record.get("scope", "")),
+        path=path,
+        start_line=start,
+        end_line=end,
+    )
+
+
 @dataclass(frozen=True)
 class NavigationEntry:
     """One picker / Flog navigation target (typed until JSON serialization)."""
 
-    path: str
-    kind: str
-    qualified_name: str
-    name: str
-    start_line: int
-    end_line: int
+    symbol: Symbol
     classification: str
 
     @classmethod
     def from_symbol(cls, sym: Symbol, *, classification: str) -> NavigationEntry:
         """Build an entry from a ctags :class:`Symbol`."""
-        return cls(
-            path=sym.path,
-            kind=sym.kind,
-            qualified_name=sym.qualified_name,
-            name=sym.name,
-            start_line=sym.start_line,
-            end_line=sym.end_line,
-            classification=classification,
-        )
-
-    @classmethod
-    def from_range(
-        cls,
-        *,
-        path: str,
-        kind: str,
-        qualified_name: str,
-        name: str,
-        start_line: int,
-        end_line: int,
-        classification: str,
-    ) -> NavigationEntry:
-        """Build an entry from a diff summary (added/removed/modified)."""
-        return cls(
-            path=path,
-            kind=kind,
-            qualified_name=qualified_name,
-            name=name,
-            start_line=start_line,
-            end_line=end_line,
-            classification=classification,
-        )
+        return cls(symbol=sym, classification=classification)
 
     @property
     def label(self) -> str:
         """Path-prefixed label for branch-diff pickers."""
-        return f"{self.path}: {symbol_label(self.kind, self.qualified_name)}"
+        s = self.symbol
+        return f"{s.path}: {symbol_label(s.kind, s.qualified_name)}"
 
     @property
     def short_label(self) -> str:
         """Kind + name only (symbol-at cursor)."""
-        return symbol_label(self.kind, self.qualified_name)
+        s = self.symbol
+        return symbol_label(s.kind, s.qualified_name)
 
     @property
     def flog_limit(self) -> str:
-        return flog_line_limit(self.path, self.start_line, self.end_line)
+        s = self.symbol
+        return flog_line_limit(s.path, s.start_line, s.end_line)
 
     def to_dict(self) -> dict[str, Any]:
         """Serialize for JSON / Vim. Call only at the wire boundary."""
+        s = self.symbol
         return {
-            "path": self.path,
-            "kind": self.kind,
-            "qualified_name": self.qualified_name,
-            "name": self.name,
-            "line": self.start_line,
-            "range": [self.start_line, self.end_line],
+            "path": s.path,
+            "kind": s.kind,
+            "qualified_name": s.qualified_name,
+            "name": s.name,
+            "line": s.start_line,
+            "range": [s.start_line, s.end_line],
             "classification": self.classification,
             "label": self.label,
             "flog_limit": self.flog_limit,
@@ -156,25 +152,12 @@ def symbol_to_navigation_entry(sym: Symbol, *, classification: str) -> Navigatio
 def enrich_symbol_dict(record: dict[str, Any]) -> dict[str, Any]:
     """Attach ``label`` / ``flog_limit`` to a symbol summary dict at JSON time."""
     out = dict(record)
-    path = str(out.get("file", out.get("path", "")))
-    if "new_range" in out and len(out["new_range"]) >= 2:
-        start, end = int(out["new_range"][0]), int(out["new_range"][1])
-    elif "range" in out and len(out["range"]) >= 2:
-        start, end = int(out["range"][0]), int(out["range"][1])
-    else:
-        start = int(out.get("line", 1))
-        end = start
-    entry = NavigationEntry.from_range(
-        path=path,
-        kind=str(out.get("kind", "symbol")),
-        qualified_name=str(out.get("qualified_name", out.get("name", ""))),
-        name=str(out.get("name", "")),
-        start_line=start,
-        end_line=end,
+    entry = NavigationEntry.from_symbol(
+        _symbol_from_wire_dict(out),
         classification=str(out.get("classification", "")),
     )
-    out["path"] = entry.path
-    out["line"] = entry.start_line
+    out["path"] = entry.symbol.path
+    out["line"] = entry.symbol.start_line
     out["label"] = entry.label
     out["flog_limit"] = entry.flog_limit
     return out
@@ -190,46 +173,17 @@ def collect_navigation_choices(
     """Flatten branch-diff symbols into typed navigation entries."""
     choices: list[NavigationEntry] = []
     for file_result in result.files:
-        path = file_result.path
         if include_modified:
-            for sym in file_result.modified_symbols:
+            for change in file_result.modified_symbols:
                 choices.append(
-                    NavigationEntry.from_range(
-                        path=path,
-                        kind=sym.kind,
-                        qualified_name=sym.qualified_name,
-                        name=sym.name,
-                        start_line=sym.new_range[0],
-                        end_line=sym.new_range[1],
-                        classification="modified",
-                    )
+                    NavigationEntry.from_symbol(change.new, classification="modified")
                 )
         if include_added:
             for sym in file_result.added_symbols:
-                choices.append(
-                    NavigationEntry.from_range(
-                        path=path,
-                        kind=sym.kind,
-                        qualified_name=sym.qualified_name,
-                        name=sym.name,
-                        start_line=sym.range[0],
-                        end_line=sym.range[1],
-                        classification="added",
-                    )
-                )
+                choices.append(NavigationEntry.from_symbol(sym, classification="added"))
         if include_removed:
             for sym in file_result.removed_symbols:
-                choices.append(
-                    NavigationEntry.from_range(
-                        path=path,
-                        kind=sym.kind,
-                        qualified_name=sym.qualified_name,
-                        name=sym.name,
-                        start_line=sym.range[0],
-                        end_line=sym.range[1],
-                        classification="removed",
-                    )
-                )
+                choices.append(NavigationEntry.from_symbol(sym, classification="removed"))
     return choices
 
 

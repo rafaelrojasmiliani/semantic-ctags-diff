@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import re
 
-from ctags3_improved.model import FUNCTION_KINDS, MEMBER_KINDS, NOISE_KINDS, SymbolKey
+from ctags3_improved.model import NOISE_KINDS
 
 
 def effective_kind(raw_kind: str, name: str, scope: str, pattern: str) -> str:
@@ -134,53 +134,3 @@ def normalize_scope_parts(*parts: str) -> str:
         elif not result.endswith("::" + part) and part != result:
             result = _join_scope(result, part)
     return result
-
-
-def symbol_key_from_tag_fields(
-    *,
-    name: str,
-    raw_kind: str,
-    scope: str,
-    class_field: str,
-    namespace_field: str,
-    enum_field: str,
-    interface_field: str,
-    pattern: str,
-    _file_scope: bool,
-) -> tuple[SymbolKey, str, str]:
-    """Construct a :class:`SymbolKey` and display fields from raw ctags columns."""
-    kind = effective_kind(raw_kind, name, scope, pattern)
-    if kind in MEMBER_KINDS and not (class_field or interface_field):
-        kind = "variable"
-    if "::" in name:
-        qualified = name
-    elif kind == "namespace":
-        qualified = _qualified_name_from_pattern(pattern) or build_qualified_name(
-            name,
-            scope,
-            class_field=class_field,
-            namespace_field=namespace_field,
-            enum_field=enum_field,
-            interface_field=interface_field,
-        )
-    else:
-        qualified = build_qualified_name(
-            name,
-            scope,
-            class_field=class_field,
-            namespace_field=namespace_field,
-            enum_field=enum_field,
-            interface_field=interface_field,
-        )
-        if kind in FUNCTION_KINDS and "::" not in qualified:
-            pattern_qn = _qualified_name_from_pattern(pattern)
-            if pattern_qn.endswith("::" + name):
-                qualified = _join_scope(
-                    class_field or pattern_qn.rsplit("::", 1)[0],
-                    name,
-                )
-    signature = pattern.strip() if pattern else None
-    key = SymbolKey(kind=kind, qualified_name=qualified, signature=signature)
-    short_name = qualified.split("::")[-1] if qualified else name
-    norm_scope = qualified.rsplit("::", 1)[0] if "::" in qualified else scope
-    return key, short_name, norm_scope

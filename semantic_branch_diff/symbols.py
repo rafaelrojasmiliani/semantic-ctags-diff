@@ -15,6 +15,7 @@ from ctags3_improved import (  # noqa: F401 — re-export public surface
     MEMBER_KINDS,
     NOISE_KINDS,
     Symbol,
+    SymbolChange,
     SymbolKey,
     best_enclosing_symbol,
     build_qualified_name,
@@ -24,7 +25,7 @@ from ctags3_improved import (  # noqa: F401 — re-export public surface
     is_reportable,
     kind_priority,
     normalize_scope_parts,
-    symbol_key_from_tag_fields,
+    symbol_change,
 )
 
 __all__ = [
@@ -35,6 +36,7 @@ __all__ = [
     "MEMBER_KINDS",
     "NOISE_KINDS",
     "Symbol",
+    "SymbolChange",
     "SymbolKey",
     "best_enclosing_symbol",
     "build_qualified_name",
@@ -44,7 +46,7 @@ __all__ = [
     "is_reportable",
     "kind_priority",
     "normalize_scope_parts",
-    "symbol_key_from_tag_fields",
+    "symbol_change",
 ]
 
 

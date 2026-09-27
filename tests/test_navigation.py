@@ -28,6 +28,8 @@ def test_navigation_entry_stays_typed_until_to_dict():
     )
     entry = symbol_to_navigation_entry(sym, classification="modified")
     assert isinstance(entry, NavigationEntry)
+    assert entry.symbol is sym
+    assert entry.classification == "modified"
     assert entry.flog_limit == "10,34:src/foo.cpp"
     assert entry.label.startswith("src/foo.cpp:")
     wire = entry.to_dict()
