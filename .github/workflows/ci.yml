@@ -50,6 +50,7 @@ jobs:
       - name: S03 — Install package and dev dependencies
         run: |
           python -m pip install --upgrade pip
+          python -m pip install -e ./ctags3-improved
           python -m pip install -e ".[dev]"
 
       - name: S03 — Run pytest

@@ -1,0 +1,65 @@
+Metadata-Version: 2.4
+Name: ctags3-improved
+Version: 0.1.0
+Summary: Enriched symbol API on top of python-ctags3 (normalized kinds, ranges, type trees)
+Requires-Python: >=3.10
+Description-Content-Type: text/markdown
+Requires-Dist: python-ctags3>=1.5
+Provides-Extra: dev
+Requires-Dist: pytest>=7.0; extra == "dev"
+
+# ctags3-improved
+
+Enriched symbol API on top of [python-ctags3](https://pypi.org/project/python-ctags3/).
+
+**python-ctags3** only iterates classic tags-file rows. This package:
+
+1. Runs Universal / Exuberant **ctags** on a source snapshot
+2. Normalizes kinds (`f` / `function` / empty → stable names)
+3. Builds qualified C++ names and end-line ranges
+4. Returns a :class:`FileIndex` with a flat symbol list and a class/struct tree
+
+## Install
+
+```bash
+pip install -e ".[dev]"
+```
+
+Needs `ctags` on `PATH` and `python-ctags3`.
+
+## Usage
+
+```python
+from ctags3_improved import index_source, generate_symbols
+
+index = index_source(
+    source_content=open("foo.cpp").read(),
+    source_path="foo.cpp",
+)
+
+# Flat list (source of truth for diffs)
+for sym in index.symbols:
+    print(sym.kind, sym.qualified_name, sym.start_line, sym.end_line)
+
+# Type tree view (class → methods / members)
+for qn, typ in index.types.items():
+    print(qn, [m.name for m in typ.methods])
+
+# Line → innermost symbol
+sym = index.enclosing(42)
+```
+
+Or the flat helper used by semantic-branch-diff:
+
+```python
+symbols = generate_symbols(source_content=..., source_path="foo.cpp")
+```
+
+## Layout
+
+| Module | Role |
+|--------|------|
+| `adapter` | Run ctags, read tags via python-ctags3 → `FileIndex` |
+| `model` | `Symbol`, `SymbolKey`, `FileIndex`, `TypeDecl` |
+| `normalize` | Kind / qualified-name heuristics |
+| `query` | Dedup, enclosing-symbol pick, `symbols_by_key` |

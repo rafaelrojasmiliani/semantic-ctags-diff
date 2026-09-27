@@ -19,4 +19,5 @@ tests/test_ctags_parsing.py
 tests/test_diff_engine.py
 tests/test_examples.py
 tests/test_navigation.py
+tests/test_report_filtering.py
 tests/test_symbol_normalization.py

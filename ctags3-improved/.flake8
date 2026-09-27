@@ -1,0 +1,15 @@
+# Align with ruff / .editorconfig (line-length = 140).
+# ALE / flake8 default to 79 without this file.
+
+[flake8]
+max-line-length = 140
+extend-ignore =
+    # Whitespace before ':' — clashes with black/ruff formatting
+    E203
+exclude =
+    .git,
+    .venv,
+    .pytest_cache,
+    *.egg-info,
+    build,
+    dist

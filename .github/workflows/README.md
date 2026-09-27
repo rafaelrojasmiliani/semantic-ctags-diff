@@ -14,17 +14,17 @@
 |------|------|--------------|
 | **S01** | Checkout repository | Full tree at the triggering commit |
 | **S02** | Install system packages | `git` for `test_diff_engine` temp repos; `universal-ctags` for `test_ctags_parsing` / examples |
-| **S03** | Python unit tests | Python 3.12, `pip install -e ".[dev]"`, `pytest -v` over `tests/` |
+| **S03** | Python unit tests | Python 3.12, `pip install -e ./ctags3-improved` then `-e ".[dev]"`, `pytest -v` |
 
 ### Test modules exercised
 
 | Module | Covers |
 |--------|--------|
-| `test_ctags_parsing.py` | `generate_symbols` / ctags adapter |
+| `ctags3-improved/tests/` | `index_source` / normalize / type tree |
 | `test_diff_engine.py` | `semantic_diff` with real mini Git repos |
 | `test_examples.py` | Bundled `examples/01_added_methods` snapshot |
 | `test_navigation.py` | Flog limit strings / symbol-at helpers |
-| `test_symbol_normalization.py` | Kind priority and qualified names |
+| `test_report_filtering.py` | Reportable / anonymous filters |
 
 ### Failure triage
 

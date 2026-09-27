@@ -11,6 +11,7 @@ requires-python = ">=3.10"
 dependencies = [
     "pydriller>=2.0",
     "python-ctags3>=1.5",
+    # ctags3-improved: install from ./ctags3-improved (see CI / README).
 ]
 
 [project.optional-dependencies]
@@ -27,15 +28,17 @@ where = ["."]
 include = ["semantic_branch_diff*"]
 
 [tool.pytest.ini_options]
-testpaths = ["tests"]
+testpaths = ["tests", "ctags3-improved/tests"]
+pythonpath = ["ctags3-improved"]
 
 [tool.ruff]
 target-version = "py310"
 line-length = 140
-src = ["semantic_branch_diff", "tests"]
+src = ["semantic_branch_diff", "ctags3-improved/ctags3_improved", "tests"]
 extend-exclude = [
     ".pytest_cache",
     "*.egg-info",
+    "ctags3-improved/.pytest_cache",
 ]
 
 [tool.ruff.lint]
@@ -66,7 +69,7 @@ unfixable = []
 ]
 
 [tool.ruff.lint.isort]
-known-first-party = ["semantic_branch_diff"]
+known-first-party = ["semantic_branch_diff", "ctags3_improved"]
 force-single-line = false
 combine-as-imports = true
 

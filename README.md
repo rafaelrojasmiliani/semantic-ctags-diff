@@ -11,10 +11,11 @@ between Git refs or directory snapshots.
 | **GitHub repo** | [semantic-ctags-diff](https://github.com/rafaelrojasmiliani/semantic-ctags-diff) |
 | **CLI** | `python3 -m semantic_branch_diff.cli` (always); `semantic-branch-diff` after `pip install -e .` |
 | **Python** | ≥ 3.10 |
-| **Deps** | [PyDriller](https://github.com/ishepard/pydriller), [python-ctags3](https://pypi.org/project/python-ctags3/), [Universal Ctags](https://github.com/universal-ctags/ctags) (or Exuberant) |
+| **Deps** | [PyDriller](https://github.com/ishepard/pydriller), [ctags3-improved](./ctags3-improved/) (wraps [python-ctags3](https://pypi.org/project/python-ctags3/)), [Universal Ctags](https://github.com/universal-ctags/ctags) |
 
 This library is **not** an AST diff (unlike difftastic). It maps Git line changes
-onto ctags symbol ranges.
+onto ctags symbol ranges via the nested **ctags3-improved** package (normalized
+kinds, ranges, and optional class/struct trees).
 
 ## How it works
 
@@ -82,6 +83,7 @@ omit `end` lines; the tool estimates function ends from `{`/`}`.
 ### Standalone (editable + console script)
 
 ```bash
+pip install -e ./ctags3-improved
 pip install -e ".[dev]"
 ```
 
@@ -99,9 +101,12 @@ pip install 'pydriller>=2.0' 'python-ctags3>=1.5'
 ```
 
 ```bash
-PYTHONPATH=/path/to/semantic-ctags-diff \
+PYTHONPATH=/path/to/semantic-ctags-diff/ctags3-improved:/path/to/semantic-ctags-diff \
   python3 -m semantic_branch_diff.cli --repo . --base main --head HEAD --format markdown
 ```
+
+Ctags enrichment (kinds, ranges, `FileIndex` / `TypeDecl`) lives in
+[ctags3-improved/](./ctags3-improved/).
 
 ## Comparison modes
 
@@ -273,6 +278,7 @@ independent of this Python module.
 ## Tests
 
 ```bash
+pip install -e ./ctags3-improved
 pip install -e ".[dev]"
 pytest -v
 ```

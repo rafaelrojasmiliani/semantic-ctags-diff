@@ -1,16 +1,38 @@
 """Tests for Vim/Flog navigation helpers."""
 
 from semantic_branch_diff.navigation import (
-    collect_navigation_choices,
+    NavigationEntry,
     flog_line_limit,
     kind_matches_filter,
     symbol_at_source,
+    symbol_to_navigation_entry,
 )
 from semantic_branch_diff.symbols import Symbol, SymbolKey, best_enclosing_symbol
 
 
 def test_flog_line_limit_format():
     assert flog_line_limit("src/foo.cpp", 10, 34) == "10,34:src/foo.cpp"
+
+
+def test_navigation_entry_stays_typed_until_to_dict():
+    sym = Symbol(
+        key=SymbolKey(kind="function", qualified_name="Foo::bar"),
+        name="bar",
+        qualified_name="Foo::bar",
+        kind="function",
+        raw_kind="function",
+        scope="Foo",
+        path="src/foo.cpp",
+        start_line=10,
+        end_line=34,
+    )
+    entry = symbol_to_navigation_entry(sym, classification="modified")
+    assert isinstance(entry, NavigationEntry)
+    assert entry.flog_limit == "10,34:src/foo.cpp"
+    assert entry.label.startswith("src/foo.cpp:")
+    wire = entry.to_dict()
+    assert wire["classification"] == "modified"
+    assert wire["range"] == [10, 34]
 
 
 def test_kind_matches_filter_function():

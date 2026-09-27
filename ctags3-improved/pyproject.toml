@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ctags3-improved"
+version = "0.1.0"
+description = "Enriched symbol API on top of python-ctags3 (normalized kinds, ranges, type trees)"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "python-ctags3>=1.5",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["ctags3_improved*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

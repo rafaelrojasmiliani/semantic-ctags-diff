@@ -1,0 +1,14 @@
+README.md
+pyproject.toml
+ctags3_improved/__init__.py
+ctags3_improved/adapter.py
+ctags3_improved/model.py
+ctags3_improved/normalize.py
+ctags3_improved/query.py
+ctags3_improved.egg-info/PKG-INFO
+ctags3_improved.egg-info/SOURCES.txt
+ctags3_improved.egg-info/dependency_links.txt
+ctags3_improved.egg-info/requires.txt
+ctags3_improved.egg-info/top_level.txt
+tests/test_adapter.py
+tests/test_normalize.py

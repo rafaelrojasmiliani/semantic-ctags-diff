@@ -206,7 +206,7 @@ class SemanticDiffResult:
             "head_commit": self.head_commit,
             "files": [f.to_dict() for f in self.files],
             "summary": self.summary,
-            "navigation": collect_navigation_choices(self),
+            "navigation": [entry.to_dict() for entry in collect_navigation_choices(self)],
         }
 
 

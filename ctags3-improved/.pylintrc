@@ -13,7 +13,6 @@ max-line-length=140
 # import-outside-toplevel: lazy imports break navigation <-> diff_engine cycle.
 disable=
     broad-except,
-    duplicate-code,
     import-outside-toplevel,
     missing-module-docstring,
     missing-class-docstring,
