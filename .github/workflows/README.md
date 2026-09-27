@@ -20,7 +20,7 @@
 
 | Module | Covers |
 |--------|--------|
-| `ctags3-improved/tests/` | `index_source` / normalize / type tree |
+| `ctags3-improved/tests/` | `index_source` / normalize / scope links |
 | `test_diff_engine.py` | `semantic_diff` with real mini Git repos |
 | `test_examples.py` | Bundled `examples/01_added_methods` snapshot |
 | `test_navigation.py` | Flog limit strings / symbol-at helpers |

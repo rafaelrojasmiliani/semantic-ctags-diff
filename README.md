@@ -105,7 +105,7 @@ PYTHONPATH=/path/to/semantic-ctags-diff/ctags3-improved:/path/to/semantic-ctags-
   python3 -m semantic_branch_diff.cli --repo . --base main --head HEAD --format markdown
 ```
 
-Ctags enrichment (kinds, ranges, `FileIndex` / `TypeDecl`) lives in
+Ctags enrichment (kinds, ranges, `FileIndex` / `Symbol`) lives in
 [ctags3-improved/](./ctags3-improved/).
 
 ## Comparison modes

@@ -7,7 +7,10 @@ Enriched symbol API on top of [python-ctags3](https://pypi.org/project/python-ct
 1. Runs Universal / Exuberant **ctags** on a source snapshot
 2. Normalizes kinds (`f` / `function` / empty → stable names)
 3. Builds qualified C++ names and end-line ranges
-4. Returns a :class:`FileIndex` with a flat symbol list and a class/struct tree
+4. Returns a :class:`FileIndex` with a **flat** :class:`Symbol` list
+
+Parent/child relationships use :attr:`Symbol.scope` and
+:attr:`Symbol.qualified_name` (no separate type-tree object).
 
 ## Install
 
@@ -20,29 +23,25 @@ Needs `ctags` on `PATH` and `python-ctags3`.
 ## Usage
 
 ```python
-from ctags3_improved import index_source, generate_symbols
+from ctags3_improved import index_source, best_enclosing_symbol
 
 index = index_source(
     source_content=open("foo.cpp").read(),
     source_path="foo.cpp",
 )
 
-# Flat list (source of truth for diffs)
 for sym in index.symbols:
-    print(sym.kind, sym.qualified_name, sym.start_line, sym.end_line)
-
-# Type tree view (class → methods / members)
-for qn, typ in index.types.items():
-    print(qn, [m.name for m in typ.methods])
+    print(sym.kind, sym.qualified_name, sym.scope, sym.start_line, sym.end_line)
 
 # Line → innermost symbol
-from ctags3_improved import best_enclosing_symbol
 sym = best_enclosing_symbol(index.symbols, 42)
 ```
 
 Or the flat helper used by semantic-branch-diff:
 
 ```python
+from ctags3_improved import generate_symbols
+
 symbols = generate_symbols(source_content=..., source_path="foo.cpp")
 ```
 
@@ -51,6 +50,6 @@ symbols = generate_symbols(source_content=..., source_path="foo.cpp")
 | Module | Role |
 |--------|------|
 | `adapter` | Run ctags, read tags via python-ctags3 → `FileIndex` |
-| `model` | `Symbol`, `SymbolKey`, `FileIndex`, `TypeDecl` |
+| `model` | `Symbol`, `SymbolKey`, `FileIndex` |
 | `normalize` | Kind / qualified-name heuristics |
 | `query` | Dedup, enclosing-symbol pick, `symbols_by_key` |

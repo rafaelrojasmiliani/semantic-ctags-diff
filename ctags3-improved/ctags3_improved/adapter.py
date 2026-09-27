@@ -8,7 +8,7 @@ import subprocess
 import tempfile
 from pathlib import Path
 
-from ctags3_improved.model import FileIndex, Symbol, SymbolKey, build_type_decls
+from ctags3_improved.model import FileIndex, Symbol, SymbolKey
 from ctags3_improved.normalize import effective_kind, symbol_key_from_tag_fields
 from ctags3_improved.query import deduplicate_symbols, symbols_by_key
 
@@ -208,10 +208,10 @@ def index_source(
     """Run ctags on in-memory source and return a :class:`FileIndex`.
 
     Primary entry point for this package. Writes a temp file (never into the
-    caller's tree), invokes ctags, parses tags, builds the type tree.
+    caller's tree), invokes ctags, and returns a flat :class:`FileIndex`.
     """
     if not source_content:
-        return FileIndex(path=source_path, symbols=[], types={})
+        return FileIndex(path=source_path, symbols=[])
 
     executable = require_ctags_executable(ctags_executable)
     suffix = Path(source_path).suffix or ".cpp"
@@ -230,13 +230,9 @@ def index_source(
             stderr = proc.stderr.strip()
             raise CtagsError(stderr or f"ctags failed: {' '.join(cmd)}")
         if not tags_file.exists():
-            return FileIndex(path=source_path, symbols=[], types={})
+            return FileIndex(path=source_path, symbols=[])
         symbols = _read_tags_file(tags_file, source_path, source_content)
-        return FileIndex(
-            path=source_path,
-            symbols=symbols,
-            types=build_type_decls(symbols),
-        )
+        return FileIndex(path=source_path, symbols=symbols)
     finally:
         if own_tmp:
             shutil.rmtree(tmp_dir, ignore_errors=True)

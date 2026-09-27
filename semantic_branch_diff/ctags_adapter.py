@@ -6,7 +6,6 @@ Ctags execution and tags parsing live in ``ctags3_improved.adapter``.
 from ctags3_improved import (  # noqa: F401
     CtagsError,
     FileIndex,
-    TypeDecl,
     generate_symbols,
     index_source,
     require_ctags_executable,
@@ -17,7 +16,6 @@ from ctags3_improved import (  # noqa: F401
 __all__ = [
     "CtagsError",
     "FileIndex",
-    "TypeDecl",
     "generate_symbols",
     "index_source",
     "require_ctags_executable",

@@ -58,13 +58,13 @@ def test_duplicate_qualified_and_unqualified_deduped():
     assert len(qualified) == 1
 
 
-def test_file_index_type_tree():
+def test_file_index_scope_links_methods_to_class():
     index = index_source(
         source_content=BASE_SOURCE,
         source_path="RobotState.cpp",
         ctags_executable="ctags",
     )
-    assert "A::B::Foo" in index.types
-    method_names = {m.name for m in index.types["A::B::Foo"].methods}
-    assert "isApprox" in method_names
-    assert "reset" in method_names
+    methods = [s for s in index.symbols if s.name in {"isApprox", "reset"} and s.kind == "function"]
+    assert methods
+    for method in methods:
+        assert method.scope == "A::B::Foo" or method.qualified_name.startswith("A::B::Foo::")

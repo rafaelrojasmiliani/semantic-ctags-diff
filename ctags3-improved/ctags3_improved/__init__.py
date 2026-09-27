@@ -1,7 +1,7 @@
 """ctags3-improved — enriched symbol API on top of python-ctags3.
 
 python-ctags3 reads classic tags files. This package runs ctags, normalizes
-kinds/names/ranges, and exposes :class:`FileIndex` / :class:`TypeDecl` views.
+kinds/names/ranges, and exposes :class:`FileIndex` / :class:`Symbol`.
 """
 
 from ctags3_improved.adapter import (
@@ -20,8 +20,6 @@ from ctags3_improved.model import (
     FileIndex,
     Symbol,
     SymbolKey,
-    TypeDecl,
-    build_type_decls,
 )
 from ctags3_improved.normalize import (
     build_qualified_name,
@@ -48,10 +46,8 @@ __all__ = [
     "NOISE_KINDS",
     "Symbol",
     "SymbolKey",
-    "TypeDecl",
     "best_enclosing_symbol",
     "build_qualified_name",
-    "build_type_decls",
     "deduplicate_symbols",
     "effective_kind",
     "generate_symbols",

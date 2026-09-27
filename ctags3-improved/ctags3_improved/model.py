@@ -1,13 +1,12 @@
 """Normalized symbol model built on top of classic ctags tags files.
 
 ``python-ctags3`` only reads tags rows. This package turns those rows into a
-stable, comparable symbol API (kinds, ranges, qualified names, type trees).
+stable, comparable symbol API (kinds, ranges, qualified names).
 """
 
 from __future__ import annotations
 
-from collections.abc import Iterable
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 
 # Lower number = higher priority when a changed line matches overlapping symbols.
@@ -42,7 +41,14 @@ NOISE_KINDS = frozenset({"variable", "local", "unknown"})
 
 @dataclass(frozen=True)
 class SymbolKey:
-    """Stable identity for comparing symbols across file revisions."""
+    """Stable identity for comparing symbols across file revisions.
+
+    Attributes:
+        kind: Normalized kind (``function``, ``class``, …). Part of identity so
+            a function and a type with the same name do not collide.
+        qualified_name: Fully qualified C++ name when available.
+        signature: Optional ctags pattern fingerprint for signature changes.
+    """
 
     kind: str
     qualified_name: str
@@ -51,7 +57,34 @@ class SymbolKey:
 
 @dataclass
 class Symbol:
-    """One ctags tag after normalization, with source range and metadata."""
+    """One ctags tag after normalization, with source range and metadata.
+
+    Ctags is per-file: a class tag's range covers only the header (or whatever
+    file was indexed). Out-of-line method bodies in a ``.cpp`` are separate
+    :class:`Symbol` rows in that translation unit, linked by ``scope`` /
+    ``qualified_name``, not nested under the class object.
+
+    Attributes:
+        key: Identity used for added/removed/modified set comparisons.
+        name: Short unqualified name (last ``::`` segment), e.g. ``isApprox``.
+        qualified_name: Full name used in reports, e.g. ``A::B::Foo::isApprox``.
+        kind: Normalized kind (may differ from ``raw_kind``); see
+            :data:`FUNCTION_KINDS`, :data:`CLASS_KINDS`, :data:`MEMBER_KINDS`.
+        raw_kind: Kind string straight from the tags file (``f``, ``function``,
+            or empty when ctags omitted it).
+        scope: Enclosing qualifier after normalization (parent class/namespace
+            string, e.g. ``A::B::Foo``). Empty for file-level / free symbols.
+            This is the parent link — not a second inventory of children.
+        path: Repo-relative path of the file this tag was extracted from.
+        start_line: 1-based start line (inclusive) in ``path``.
+        end_line: 1-based end line (inclusive); inferred from braces when ctags
+            omits ``end:``.
+        file_scope: True for file-level / static tags that should not steal
+            line attribution from nested symbols.
+        pattern: Original ctags search pattern (``/^…$/``), if present.
+        signature: Pattern fingerprint used as a signature hint (often the same
+            as ``pattern``); also stored on :attr:`key.signature`.
+    """
 
     key: SymbolKey
     name: str
@@ -76,33 +109,16 @@ class Symbol:
 
 
 @dataclass
-class TypeDecl:
-    """Class/struct/interface view: the type symbol plus its methods and fields."""
-
-    symbol: Symbol
-    methods: list[Symbol] = field(default_factory=list)
-    members: list[Symbol] = field(default_factory=list)
-
-    @property
-    def qualified_name(self) -> str:
-        return self.symbol.qualified_name
-
-    @property
-    def kind(self) -> str:
-        return self.symbol.kind
-
-
-@dataclass
 class FileIndex:
     """Indexed symbols for one source file revision.
 
-    ``symbols`` is the flat source of truth. ``types`` is a derived tree view
-    grouping methods/members under enclosing class-like symbols.
+    ``symbols`` is a flat list (one entry per ctags tag). Parent/child
+    relationships are expressed via :attr:`Symbol.scope` and
+    :attr:`Symbol.qualified_name`, not a separate type tree.
     """
 
     path: str
     symbols: list[Symbol]
-    types: dict[str, TypeDecl] = field(default_factory=dict)
 
     def by_key(self) -> dict[SymbolKey, Symbol]:
         """Index symbols by :class:`SymbolKey` (last wins on duplicate keys)."""
@@ -110,25 +126,3 @@ class FileIndex:
         for sym in self.symbols:
             out[sym.key] = sym
         return out
-
-
-def build_type_decls(symbols: Iterable[Symbol]) -> dict[str, TypeDecl]:
-    """Group methods and data members under class/struct/interface symbols."""
-    types: dict[str, TypeDecl] = {}
-    for sym in symbols:
-        if sym.kind in CLASS_KINDS:
-            types[sym.qualified_name] = TypeDecl(symbol=sym)
-
-    for sym in symbols:
-        if sym.kind in CLASS_KINDS:
-            continue
-        container = sym.scope or (
-            sym.qualified_name.rsplit("::", 1)[0] if "::" in sym.qualified_name else ""
-        )
-        if not container or container not in types:
-            continue
-        if sym.kind in FUNCTION_KINDS:
-            types[container].methods.append(sym)
-        elif sym.kind in MEMBER_KINDS:
-            types[container].members.append(sym)
-    return types
