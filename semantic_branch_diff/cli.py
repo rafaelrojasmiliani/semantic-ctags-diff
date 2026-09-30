@@ -10,7 +10,8 @@ Comparison modes:
 - ``--repo`` + ``--from`` + ``--to`` — direct commit-to-commit
 - ``--old-dir`` + ``--new-dir`` — directory snapshots (examples, no Git)
 - ``--repo`` + ``--base`` + ``--head`` + ``--merge-conflicts`` — files that
-  would conflict merging head into base
+  would conflict merging head into base (add ``--path FILE`` for that file as
+  merged, conflict markers included)
 """
 
 from __future__ import annotations
@@ -22,7 +23,7 @@ import sys
 from pathlib import Path
 
 from semantic_branch_diff.diff_engine import DEFAULT_EXTENSIONS, semantic_diff
-from semantic_branch_diff.merge_conflicts import find_merge_conflicts
+from semantic_branch_diff.merge_conflicts import find_merge_conflicts, merged_file
 from semantic_branch_diff.navigation import symbol_at_path
 from semantic_branch_diff.renderers import render_json, render_markdown
 
@@ -129,7 +130,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--merge-conflicts",
         action="store_true",
-        help="List files that would conflict merging --head into --base (JSON to stdout)",
+        help="List files that would conflict merging --head into --base (JSON to stdout); "
+        "with --path FILE, print FILE as merged, conflict markers included",
     )
     return parser
 
@@ -204,6 +206,9 @@ def main(argv: list[str] | None = None) -> int:
             return 1
 
     try:
+        if args.merge_conflicts and args.path:
+            sys.stdout.write(merged_file(args.repo, args.base, args.head, args.path[0]))
+            return 0
         if args.merge_conflicts:
             conflicts = find_merge_conflicts(args.repo, args.base, args.head)
             sys.stdout.write(json.dumps(conflicts.to_dict(), indent=2, sort_keys=True) + "\n")

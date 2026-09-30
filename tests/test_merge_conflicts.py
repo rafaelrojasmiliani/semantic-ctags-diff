@@ -8,7 +8,7 @@ from pathlib import Path
 
 from conftest import checkout, commit_all, create_branch, init_repo, run, write_file
 from semantic_branch_diff.cli import main
-from semantic_branch_diff.merge_conflicts import find_merge_conflicts
+from semantic_branch_diff.merge_conflicts import find_merge_conflicts, merged_file
 
 LINES = "".join(f"line {i}\n" for i in range(1, 11))
 
@@ -53,6 +53,28 @@ def test_detects_each_conflict_kind_and_skips_clean_merges():
             ("new.cpp", "add/add"),
         }
         assert result.merge_base == run(["git", "merge-base", "main", "feature"], repo).strip()
+
+
+def test_merged_file_has_labelled_diff3_markers(capsys):
+    with tempfile.TemporaryDirectory() as tmp:
+        repo = _repo(tmp)
+        code = main(
+            ["--repo", str(repo), "--base", "HEAD", "--head", "feature",
+             "--merge-conflicts", "--path", "conflict.cpp"]
+        )
+        assert code == 0
+        merged = capsys.readouterr().out.splitlines()
+        i = merged.index("<<<<<<< HEAD")
+        assert merged[i:i + 7] == [
+            "<<<<<<< HEAD", "main 5",
+            "||||||| merge base", "line 5",
+            "=======", "feature 5",
+            ">>>>>>> feature",
+        ]
+        # A cleanly merging file comes back merged, without markers.
+        clean = merged_file(repo, "HEAD", "feature", "clean.cpp")
+        assert "<<<<<<<" not in clean
+        assert "feature 1" in clean and "main 10" in clean
 
 
 def test_cli_emits_json(capsys):

@@ -67,23 +67,43 @@ def _blob(repo: Path, ref: str, path: str) -> bytes:
     return proc.stdout if proc.returncode == 0 else b""
 
 
-def _merges_cleanly(ours: bytes, base: bytes, theirs: bytes) -> bool:
+def _merge(
+    ours: bytes, base: bytes, theirs: bytes, labels: tuple[str, str, str] = ("ours", "base", "theirs")
+) -> tuple[bool, bytes]:
+    """Three-way merge: ``(clean, merged text with diff3-style conflict markers)``."""
     if ours == theirs:
-        return True
+        return True, ours
     with tempfile.TemporaryDirectory(prefix="semantic_merge_") as tmp:
         files = []
         for name, data in (("ours", ours), ("base", base), ("theirs", theirs)):
             f = Path(tmp) / name
             f.write_bytes(data)
             files.append(str(f))
+        label_args = [arg for label in labels for arg in ("-L", label)]
         # Exit > 0 counts conflict hunks; < 0 (e.g. binary input) is an error.
         # Either way git would not merge the file on its own.
         proc = subprocess.run(
-            ["git", "merge-file", "-p", "-q", *files],
+            ["git", "merge-file", "-p", "-q", "--diff3", *label_args, *files],
             capture_output=True,
             check=False,
         )
-    return proc.returncode == 0
+    return proc.returncode == 0, proc.stdout
+
+
+def merged_file(repo: str | Path, ours: str, theirs: str, path: str) -> str:
+    """``path`` as merging ``theirs`` into ``ours`` would leave it, markers included.
+
+    Markers are labelled with ``ours`` / ``merge base`` / ``theirs`` as given.
+    """
+    root = git_utils.resolve_repo_root(repo)
+    base = git_utils.merge_base(root, ours, theirs)
+    _clean, text = _merge(
+        _blob(root, ours, path),
+        _blob(root, base, path),
+        _blob(root, theirs, path),
+        labels=(ours, "merge base", theirs),
+    )
+    return text.decode("utf-8", errors="replace")
 
 
 def find_merge_conflicts(repo: str | Path, ours: str, theirs: str) -> MergeConflicts:
@@ -110,11 +130,12 @@ def find_merge_conflicts(repo: str | Path, ours: str, theirs: str) -> MergeConfl
         if "D" in statuses:
             conflicts.append(MergeConflict(path, "modify/delete"))
             continue
-        if not _merges_cleanly(
+        clean, _text = _merge(
             _blob(root, ours_commit, path),
             _blob(root, base, path),
             _blob(root, theirs_commit, path),
-        ):
+        )
+        if not clean:
             conflicts.append(MergeConflict(path, "add/add" if statuses == {"A"} else "content"))
 
     return MergeConflicts(
